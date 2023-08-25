@@ -50,11 +50,11 @@ function getTargets(): NodeListOf<Element> | Element[] {
       break;
 
     case "":
-      // if [scoped] is present and unvalued, operate on <x-hyper> elements
-      nodes = document.querySelectorAll("x-hyper");
+      // if [scoped] is present and unvalued, operate on <hyper> elements
+      nodes = document.querySelectorAll("hyper");
       assert(
         nodes.length > 0,
-        `<script> loading hyper runtime has unvalued [scoped] attribute. It requires at least one <x-hyper> element to be present in the document but none found.`
+        `<script> loading hyper runtime has unvalued [scoped] attribute. It requires at least one <hyper> element to be present in the document but none found.`
       );
       break;
 
@@ -95,7 +95,7 @@ function parseHyperOnEvery(nodes: NodeListOf<Element> | Element[]) {
     if (node.hasAttribute("[plain]")) {
       const parent = node.parentElement;
       // parent is always present
-      const leadSpaceIdx = parent!.innerHTML.indexOf("<hyper ");
+      const leadSpaceIdx = parent!.innerHTML.indexOf("<hyper");
       const leadSpaceMatch = parent!.innerHTML
         .substring(0, leadSpaceIdx)
         .match(/[ \t]*$/);
@@ -124,11 +124,10 @@ function parseHyperOnEvery(nodes: NodeListOf<Element> | Element[]) {
  */
 function parseChildren(parent: Element): Node[] {
   const tree: Node[] = [];
-  // iterate over all parent nodes types:
-  // <tag>, text, <!--comment-->
+  // iterate over all nodes types: <tag>, text, <!--comment-->
   parent.childNodes.forEach((child) => {
     switch (child.nodeType) {
-      // plain text
+      // text
       case Node.TEXT_NODE:
         // no need to parse, just clone and push
         tree.push(child.cloneNode());
@@ -136,53 +135,48 @@ function parseChildren(parent: Element): Node[] {
 
       // <tag>
       case Node.ELEMENT_NODE:
-        const ch = child as Element;
-        // (redundant?) make it case-insensitive
-        const childName = ch.nodeName.toUpperCase();
-        // if <tag> name begins with 'x'
-        if (childName.startsWith("X")) {
-          // dispatch
-          switch (childName) {
-            case "X-RUN":
-              // TODO: handle x-run
-              break;
-            case "X-DEF":
-              parseDef(ch); // modifies global
-              break;
-            case "X-IF":
-              // TODO: handle x-if
-              break;
-            case "X-REP":
-              tree.push(...parseRep(ch));
-              break;
-            default:
-              parseError(
-                `\`${childName}\` is an unrecognized Hyper node and will be excluded from the output tree`
-              );
-          }
-        }
-        // if <tag> name does not begin with 'x'
-        else {
-          // then, it might be a user-defined <my_tag>
-          const tryDefinedNode = parseRef(ch);
-          if (tryDefinedNode) {
-            tree.push(tryDefinedNode);
-            return;
-          }
-          // otherwise, it must be an ordinary HTML <tag>,
-          // just clone it and keep parsing recursively
-          const cloned = ch.cloneNode();
-          const chTree = parseChildren(ch);
-          chTree.forEach((ch) => {
-            cloned.appendChild(ch);
-          });
-          tree.push(cloned);
+        const child_ = child as Element; // cast
+        // make it case-insensitive
+        const childName = child_.nodeName.toUpperCase();
+        // dispatch
+        switch (childName) {
+          // <def>
+          case "DEF":
+            parseDef(child_); // modifies global
+            break;
+
+          // <if>
+          case "IF":
+            // TODO: handle if
+            break;
+
+          // <rep>
+          case "REP":
+            tree.push(...parseRep(child_));
+            break;
+
+          // <...>
+          default:
+            // try to find a user-defined <my_tag>
+            const tryDefinedNode = parseRef(child_);
+            if (tryDefinedNode) {
+              tree.push(tryDefinedNode);
+            }
+            // otherwise, it must be an ordinary HTML <tag>,
+            else {
+              // just clone it
+              const cloned = child_.cloneNode();
+              // keep parsing recursively
+              const chTree = parseChildren(child_);
+              chTree.forEach((ch) => {
+                cloned.appendChild(ch);
+              });
+              tree.push(cloned);
+            }
         }
         break;
 
-      // <!--comment-->, etc.
-      default:
-      // ignore all others
+      // <!--comment--> and all others nodes are ignored
     }
   });
   return tree;
@@ -196,45 +190,45 @@ function parseChildren(parent: Element): Node[] {
  */
 function parseRef(node: Element): Element | undefined {
   // TODO: templates and slots
-  return globalDefs.get(node.nodeName);
+  return globalDefs.get(node.nodeName)?.cloneNode(true) as Element;
 }
 
 /**
  * parseDef
  *
- * Parses the <x-def name> tag and creates a new node that can be referenced
+ * Parses the <def name> tag and creates a new node that can be referenced
  * later using <name>.
  * TODO: [lazy], [const], templates, slots
  */
 function parseDef(node: Element) {
   // there must be at least one attribute for a name
-  assert(node.attributes.length > 0, "<x-def> Name is missing.");
+  assert(node.attributes.length > 0, "<def> Name is missing.");
   const name = node.attributes[0].name;
   const val = node.attributes[0].value;
   // name should be an attribute without a value
   assert(
     val == "",
-    `<x-def> name "${name}" should not have a value part in \`${name}="${val}"\`.`
+    `<def> name "${name}" should not have a value part in \`${name}="${val}"\`.`
   );
   // name must be a valid tag name
   assert(
     isValidHTMLTagName(name),
-    `<x-def> "${name}" is a reserved HTML tag name and cannot be used as a custom name.`
+    `<def> "${name}" is a reserved HTML tag name and cannot be used as a custom name.`
   );
   // name shouldn't be one of the common attribute names
   assert(
     !isCommonHTMLAttrName(name),
-    `<x-def> "${name}" is a common HTML attribute name.`
+    `<def> "${name}" is a common HTML attribute name.`
   );
   // name shouldn't be one of the standard HTML tags
   assert(
     !isHTMLTagName(name),
-    `<x-def> "${name}" is one of the standard HTML tags.`
+    `<def> "${name}" is one of the standard HTML tags.`
   );
   // name should not be already defined
   assert(
     globalDefs.get(name.toUpperCase()) == null,
-    `<x-def> "${name}" already exists.`
+    `<def> "${name}" already exists.`
   );
 
   // parse content first
@@ -262,23 +256,20 @@ function parseDef(node: Element) {
 /**
  * parseRep
  *
- * Parses the <x-rep n> where n is the number of times the content inside
+ * Parses the <rep n> where n is the number of times the content inside
  * should be repeated.
  */
 function parseRep(node: Element): Node[] {
-  // <x-rep> should have at least one attribute for a number of repetitions
-  assert(
-    node.attributes.length > 0,
-    "<x-rep> Missing the number of reps to do."
-  );
-  // <x-rep> should have children to repeat
-  assert(node.hasChildNodes(), "<x-rep> Cannot be empty.");
+  // <rep> should have at least one attribute for a number of repetitions
+  assert(node.attributes.length > 0, "<rep> Missing the number of reps to do.");
+  // <rep> should have children to repeat
+  assert(node.hasChildNodes(), "<rep> Cannot be empty.");
 
   // parse the number of repetitions
   const match = node.attributes[0].name.match(/\d+/);
   assert(
     match != null,
-    "<x-rep> Unable to recognize the number of reps as its first attribute."
+    "<rep> Unable to recognize the number of reps as its first attribute."
   );
   const n = parseInt(match![0], 10);
 
