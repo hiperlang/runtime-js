@@ -27,7 +27,7 @@ if (document.currentScript) {
  * This block is executed when the document is fully loaded.
  */
 document.addEventListener("DOMContentLoaded", () => {
-  parseHyperOnEvery(getTargets()); // magic starts here
+  parseOnEvery(getTargets()); // magic starts here
 });
 
 /**
@@ -68,13 +68,6 @@ function getTargets(): NodeListOf<Element> | Element[] {
       break;
   }
 
-  // hide the nodes we operate on as soon as possible
-  nodes.forEach((n) => {
-    // by setting the "hidden" attribute we make sure
-    // they are not visible to the user while processing
-    n.setAttribute("hidden", "");
-  });
-
   return nodes;
 }
 
@@ -83,31 +76,54 @@ function getTargets(): NodeListOf<Element> | Element[] {
  *
  * ...
  */
-function parseHyperOnEvery(nodes: NodeListOf<Element> | Element[]) {
+function parseOnEvery(nodes: NodeListOf<Element> | Element[]) {
+  // hide the nodes we operate on as soon as possible
+  nodes.forEach((n) => {
+    // by setting the "hidden" attribute we make sure
+    // they are not visible to the user while processing
+    n.addEventListener("click", (e) => {});
+    n.setAttribute("hidden", "");
+  });
+
   // operate on every node's tree
   nodes.forEach((node) => {
+    // TODO: move attribute handling into separate function?
+
     // if [bypass] is present
     // do not operate and keep the original tree "as is"
-    if (node.hasAttribute("[bypass]")) return;
-
-    // if [plain] is present
-    // remove the original tree and print it as plain text
-    if (node.hasAttribute("[plain]")) {
-      const parent = node.parentElement;
-      // parent is always present
-      const leadSpaceIdx = parent!.innerHTML.indexOf("<hyper");
-      const leadSpaceMatch = parent!.innerHTML
-        .substring(0, leadSpaceIdx)
-        .match(/[ \t]*$/);
-      const leadSpace = leadSpaceMatch ? leadSpaceMatch[0] : "";
-      const pre = document.createElement("pre");
-      pre.textContent = leadSpace + node.outerHTML;
-      node.replaceWith(pre);
+    if (node.hasAttribute("[bypass]")) {
+      // if [bypass]="print"
+      // print source tree as plain text
+      if (node.getAttribute("[bypass]") == "print") {
+        const pre = document.createElement("pre");
+        pre.textContent = getLeadingSpace(node) + node.outerHTML;
+        node.replaceWith(pre);
+      }
       return;
     }
 
     // parse children
-    const resultingNodes = parseChildren(node);
+    const resultingNodes = parse(node);
+
+    if (node.hasAttribute("[watch]")) {
+      // create a new <src> element to store the source tree before parsing
+      const src = document.createElement("src");
+
+      // move the children of the target node to the <src> element
+      node.childNodes.forEach((e) => {
+        src.appendChild(e);
+      });
+
+      // clear the content of the target node and append the <src> element
+      node.innerHTML = "";
+      node.prepend(src);
+
+      // add and attach the result to <output>
+      // add eventListener
+    }
+
+    // if [print] is present
+
     node.replaceChildren(...resultingNodes);
 
     // done, unhide
@@ -116,13 +132,25 @@ function parseHyperOnEvery(nodes: NodeListOf<Element> | Element[]) {
   });
 }
 
+function getLeadingSpace(node: Element) {
+  const parent = node.parentElement;
+  // parent is always present
+  const leadSpaceIdx = parent!.innerHTML.indexOf(
+    `<${node.tagName.toLocaleLowerCase()}`
+  );
+  const leadSpaceMatch = parent!.innerHTML
+    .substring(0, leadSpaceIdx)
+    .match(/[ \t]*$/);
+  return leadSpaceMatch ? leadSpaceMatch[0] : "";
+}
+
 /**
  * parseChildren
  *
  * Constructs a new tree based on the content of the original node, while
  * keeping the original node tree unchanged.
  */
-function parseChildren(parent: Element): Node[] {
+function parse(parent: Element): Node[] {
   const tree: Node[] = [];
   // iterate over all nodes types: <tag>, text, <!--comment-->
   parent.childNodes.forEach((child) => {
@@ -140,34 +168,30 @@ function parseChildren(parent: Element): Node[] {
         const childName = child_.nodeName.toUpperCase();
         // dispatch
         switch (childName) {
-          // <def>
-          case "DEF":
+          case "DEF": // <def>
             parseDef(child_); // modifies global
             break;
 
-          // <if>
-          case "IF":
+          case "IF": // <if>
             // TODO: handle if
             break;
 
-          // <rep>
-          case "REP":
+          case "REP": // <rep>
             tree.push(...parseRep(child_));
             break;
 
-          // <...>
-          default:
-            // try to find a user-defined <my_tag>
+          default: // <any_other>
+            // try finding a user-defined <my_tag>
             const tryDefinedNode = parseRef(child_);
             if (tryDefinedNode) {
               tree.push(tryDefinedNode);
             }
-            // otherwise, it must be an ordinary HTML <tag>,
+            // otherwise, it must be an ordinary HTML <tag>
             else {
               // just clone it
               const cloned = child_.cloneNode();
               // keep parsing recursively
-              const chTree = parseChildren(child_);
+              const chTree = parse(child_);
               chTree.forEach((ch) => {
                 cloned.appendChild(ch);
               });
@@ -176,7 +200,7 @@ function parseChildren(parent: Element): Node[] {
         }
         break;
 
-      // <!--comment--> and all others nodes are ignored
+      // ignore other node types
     }
   });
   return tree;
@@ -232,7 +256,7 @@ function parseDef(node: Element) {
   );
 
   // parse content first
-  const subtree = parseChildren(node);
+  const subtree = parse(node);
 
   // prepare a node
   const newNode = document.createElement(name);
@@ -276,7 +300,7 @@ function parseRep(node: Element): Node[] {
   // TODO: [notrail]
 
   // spawn children n times
-  const children = parseChildren(node);
+  const children = parse(node);
   const tree: Node[] = [];
   for (let i = 0; i < n!; i++) {
     children.forEach((child) => {
