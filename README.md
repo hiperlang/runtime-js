@@ -5,16 +5,16 @@
 ### "Wrapping" definitions (slots)
 
 ```html
-<h#>Hello</h#>
+<h#>Foo</h#>
 <!-- result -->
 (empty)
 ```
 
 ```html
-<h#>Hello</h#>
+<h#>Foo</h#>
 <h></h>
 <!-- result -->
-<h>Hello</h>
+<h>Foo</h>
 ```
 
 ```html
@@ -26,16 +26,16 @@
 ### "Unwrapping" definitions (vars)
 
 ```html
-<h$>Hello</h$>
+<h$>Foo</h$>
 <!-- result -->
 (empty)
 ```
 
 ```html
-<h$>Hello</h$>
+<h$>Foo</h$>
 <h></h>
 <!-- result -->
-Hello
+Foo
 ```
 
 ```html
@@ -47,12 +47,12 @@ Hello
 ### Definition mutation
 
 ```html
-<h$>Hello</h$>
+<h$>Foo</h$>
 <h></h>
-<!-- Hello -->
-<mut h>Bye</mut>
+<!-- Foo -->
+<mut h>Bar</mut>
 <h></h>
-<!-- Bye -->
+<!-- Bar -->
 ```
 
 ### Self-applied definitions
@@ -68,14 +68,14 @@ Unwrapped
 ### HTML tags
 
 ```html
-<h1>Hello</h1>
+<h1>Foo</h1>
 <!-- result -->
-<h1>Hello</h1>
+<h1>Foo</h1>
 ```
 
 ```html
 <h1#>
-  <p>Hello</p>
+  <p>Foo</p>
 </h1#>
 <!-- result -->
 (no error)
@@ -83,18 +83,31 @@ Unwrapped
 
 ```html
 <h1#>
-  <p>Hello</p>
+  <p>Foo</p>
 </h1#>
 <h1></h1>
-<h1>Bye</h1>
 <!-- result -->
-<h1><p>Hello</p></h1>
-<h1>Bye</h1>
+<h1><p>Foo</p></h1>
+```
+
+```html
+<h1#>Foo</h1#>
+<h1>Bar</h1>
+<!-- result -->
+(error: for text to be inside `h1` a slot <text@></text@> should be explicitly
+defined)
+```
+
+```html
+<h1#>Foo <text@></text@></h1#>
+<h1>Bar</h1>
+<!-- result -->
+<h1>Foo Bar</h1>
 ```
 
 ```html
 <h1$>
-  <p>Hello</p>
+  <p>Foo</p>
 </h1$>
 <!-- result -->
 (error: standard HTML tags cannot be used as inline definitions (consider using
@@ -138,8 +151,21 @@ Basic:
 </div>
 <!-- result -->
 <div>
-  <div class="b-red"></div>
-  <div class="b-red"></div>
+  <div class="bg-red"></div>
+  <div class="bg-red"></div>
+</div>
+```
+
+```html
+<stl. bg="red"></stl.>
+<div stl.>
+  <div></div>
+  <div></div>
+</div>
+<!-- result -->
+<div class="bg-red">
+  <div></div>
+  <div></div>
 </div>
 ```
 
@@ -150,6 +176,24 @@ Patterned styling:
   <age c="red"></age>
   <name c="blue"></name>
 </stl.>
+<user stl.>
+  <age>30</age>
+  <name>Timur</name>
+</user>
+<!-- result -->
+<user class="bg-red">
+  <age class="c-red">30</age>
+  <name class="c-blue">Timur</name>
+</user>
+```
+
+```html
+<!-- define -->
+<stl. bg="red">
+  <this@ c="red"></this@>
+  <this@ c="blue"></this@>
+</stl.>
+<!-- apply -->
 <user stl.>
   <age>30</age>
   <name>Timur</name>
