@@ -74,35 +74,38 @@ Unwrapped
 ```
 
 ```html
-<h1#>
-  <p>Foo</p>
-</h1#>
+<h1#>Foo</h1#>
 <!-- result -->
 (no error)
 ```
 
 ```html
-<h1#>
-  <p>Foo</p>
-</h1#>
+<h1#>Foo</h1#>
 <h1></h1>
 <!-- result -->
-<h1><p>Foo</p></h1>
+<h1>Foo</h1>
 ```
 
 ```html
 <h1#>Foo</h1#>
 <h1>Bar</h1>
 <!-- result -->
-(error: for text to be inside `h1` a slot <text@></text@> should be explicitly
-defined)
+(error: to use text inside `h1` provide <text@></text@> placeholder)
 ```
 
 ```html
 <h1#>Foo <text@></text@></h1#>
+
+<!-- apply 1 -->
 <h1>Bar</h1>
-<!-- result -->
+<!-- result-->
 <h1>Foo Bar</h1>
+
+<!-- apply 2 -->
+<h1><p>Bar</p></h1>
+<!-- result -->
+(error: to use tags inside `h1` provide <elm@></elm@> or
+<any@></any@> placeholder)
 ```
 
 ```html
@@ -132,7 +135,7 @@ Possible options:
 </user>
 ```
 
-### Applier
+### Mixins
 
 Basic:
 
@@ -226,3 +229,86 @@ Element: 2; Index: 1
 Element: 3; Index: 2
 </pre>
 ```
+
+## Use cases
+
+```html
+<div [autoprefix]>
+  <!-- structure -> style -> content -->
+  <user#>
+    <age# :int></age#>
+    <name# :str></name#>
+  </user#>
+
+  <table.>
+    <user b="1px solid black">
+      <age txt="bold"></age>
+      <name txt="italic"></name>
+    </user>
+  </table.>
+
+  <tbl table. :user>
+    <on@ click bg="red">
+      <mut! all="user > age">0</mut!>
+    </on@>
+    <user>
+      <age>29</age>
+      <name>Timur</name>
+    </user>
+  </tbl>
+</div>
+```
+
+```html
+<hyper>
+  <func#>
+    <arg@ a :num></arg@>
+    <arg@ b :num></arg@>
+    <calc a*b></calc>
+  </func#>
+  <out #>
+    <on click>
+      <print>Clicked!</print>
+      <mut self>2</mut>
+    </on>
+    <rep 10>
+      <func 1 2></func>
+    </rep>
+  </out>
+  <h1>
+    <p>Paragraph</p>
+    <out></out>
+  </h1>
+</hyper>
+```
+
+````html
+<div table. tbl# is@="row > cell > :num">
+  <is@>
+    <row>
+      <cell :num></cell>
+    </row>
+  </is@>
+  <row>
+    <cell>1</cell>
+    <cell>2</cell>
+  </row>
+  <row>
+    <cell>3</cell>
+    <cell>4</cell>
+  </row>
+  <row>
+    <cell>5</cell>
+    <cell>6</cell>
+  </row>
+  <row>
+    <cell>
+      <sum tbl#="row > cell:nth-child(2)"></sum>
+      <!-- or? -->
+      <sum sel@="tbl# > row > cell:nth-child(2)"></sum>
+    </cell>
+    <cell></cell>
+  </row>
+</div>
+```
+````
