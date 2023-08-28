@@ -12,8 +12,9 @@
  */
 
 class TargetNode {
-  root: Element;
-  scope: Scope = new Scope();
+  readonly origin: Element;
+  currNode: Element;
+  scope: ScopeManager = new ScopeManager();
   supportedAttrs: Set<string>;
 
   // supportsAttribute(): boolean
@@ -21,28 +22,29 @@ class TargetNode {
   assertAttributeSupport(name: string) {
     assert(
       this.supportedAttrs.has(name),
-      `Attribute \`${name}\` is not supported by "${this.root.nodeName}" target`
+      `Attribute \`${name}\` is not supported by "${this.currNode.nodeName}" target`
     );
   }
 
   getAttribute(name: string): string | undefined {
     this.assertAttributeSupport(name);
-    const attr = this.root.attributes.getNamedItem(name);
+    const attr = this.currNode.attributes.getNamedItem(name);
     return attr?.value;
   }
 
   hasAttribute(name: string): boolean {
     this.assertAttributeSupport(name);
-    return this.root.attributes.getNamedItem(name) != null;
+    return this.currNode.attributes.getNamedItem(name) != null;
   }
 
-  constructor(root: Element, supportedAttrs: string[]) {
-    this.root = root;
+  constructor(origin: Element, supportedAttrs: string[]) {
+    this.origin = origin;
+    this.currNode = origin;
     this.supportedAttrs = new Set(supportedAttrs);
   }
 }
 
-class Scope {
+class ScopeManager {
   scopes: Map<string, Element>[] = [];
 
   currentScope() {
@@ -83,8 +85,8 @@ class Scope {
 const TARGET_NODES: TargetNode[] = [];
 const TARGET_OPTIONS = ["[skip]"];
 
-let SCRIPT_NODE: TargetNode | null = null;
-const SCRIPT_OPTIONS = ["[scope]", "[skip]"];
+let RUNTIME_LOADING_NODE: TargetNode | null = null;
+const RUNTIME_LOADING_OPTIONS = ["[scope]", "[skip]"];
 
 /**
  * ***************************
@@ -96,7 +98,7 @@ const SCRIPT_OPTIONS = ["[scope]", "[skip]"];
  * This block executes as soon as the document begins to load. Check if we
  * have access to the <script> element to import hyper options.
  */
-initScriptNode();
+initRuntimeLoadingNode();
 
 /**
  * Initialize targets as soon as the document is fully loaded and
@@ -108,9 +110,9 @@ document.addEventListener("DOMContentLoaded", () => {
 });
 
 function initTargetNodes() {
-  if (SCRIPT_NODE?.hasAttribute("[skip]")) return;
-  if (SCRIPT_NODE?.hasAttribute("[scope]")) {
-    const scope = SCRIPT_NODE.getAttribute("[scope]");
+  if (RUNTIME_LOADING_NODE?.hasAttribute("[skip]")) return;
+  if (RUNTIME_LOADING_NODE?.hasAttribute("[scope]")) {
+    const scope = RUNTIME_LOADING_NODE.getAttribute("[scope]");
     assert(
       scope != "",
       `<script> loading hyper runtime has [scope] attribute set to "" (empty), which means no matching elements could be found for runtime to operate on. If you want to temporarily disable runtime, consider using [skip] attribute instead.`
@@ -128,9 +130,12 @@ function initTargetNodes() {
   }
 }
 
-function initScriptNode() {
+function initRuntimeLoadingNode() {
   if (document.currentScript) {
-    SCRIPT_NODE = new TargetNode(document.currentScript, SCRIPT_OPTIONS);
+    RUNTIME_LOADING_NODE = new TargetNode(
+      document.currentScript,
+      RUNTIME_LOADING_OPTIONS
+    );
   }
 }
 
@@ -146,23 +151,28 @@ function parseTargetNodes() {
   });
 }
 
-function parseNode(parent: TargetNode) {
-  parent.scope.newScope();
-  parent.root.childNodes.forEach((child) => {
-    // parse only <element> nodes
+function parseHyperBlock(target: TargetNode) {
+  target.scope.addName(target.currNode.nodeName, target.currNode);
+  target.currNode.setAttribute("hidden", "");
+}
+
+function parseNode(target: TargetNode) {
+  target.scope.newScope();
+  target.currNode.childNodes.forEach((child) => {
     if (child.nodeType != Node.ELEMENT_NODE) return;
+
     if (child.nodeName.endsWith("#")) {
-      parent.scope.addName(child.nodeName, child as Element);
-      (child as Element).setAttribute("hidden", "");
+      target.currNode = child as Element;
+      parseHyperBlock(target);
     } else {
       if (HTML_TAG_NAMES.has(child.nodeName)) return;
 
-      const elm = parent.scope.resolveName(child.nodeName + "#");
+      const elm = target.scope.resolveName(child.nodeName + "#");
       assert(elm != undefined, "Definition not found");
       child.replaceWith(elm!.cloneNode(true));
     }
   });
-  console.log(parent.scope);
+  console.log(target.scope);
 }
 
 /**
