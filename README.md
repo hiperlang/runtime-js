@@ -1,24 +1,61 @@
 # Hyper Language Reference
 
+## Basic Constructs
+
+```html
+<!-- block name -->
+<foo#></foo#>
+
+<!-- var name -->
+<foo$></foo$>
+
+<!-- control block name -->
+<foo!></foo!>
+
+<!-- option name -->
+[option]
+
+<!-- mixin name -->
+mixin.
+
+<!-- type name -->
+:type
+
+<!-- meta name -->
+meta@
+
+<!-- (raw) attribute name -->
+attr=""
+
+<!-- reference name -->
+<foo></foo>
+```
+
 ## Examples
 
 ### "Wrapping" definitions (slots)
 
 ```html
+<!-- use -->
 <h#>Foo</h#>
+
 <!-- result -->
 (empty)
 ```
 
 ```html
+<!-- use -->
 <h#>Foo</h#>
 <h></h>
+
 <!-- result -->
 <h>Foo</h>
 ```
 
 ```html
+<!-- use -->
 <h></h>
+
 <!-- result -->
 (error: undefined `h`)
 ```
@@ -27,6 +64,7 @@
 
 ```html
 <h$>Foo</h$>
+
 <!-- result -->
 (empty)
 ```
@@ -34,12 +72,14 @@
 ```html
 <h$>Foo</h$>
 <h></h>
+
 <!-- result -->
 Foo
 ```
 
 ```html
 <h></h>
+
 <!-- result -->
 (error: undefined `h`)
 ```
@@ -47,19 +87,23 @@ Foo
 ### Definition mutation
 
 ```html
+<!-- use -->
 <h$>Foo</h$>
 <h></h>
-<!-- Foo -->
 <mut h>Bar</mut>
 <h></h>
-<!-- Bar -->
+
+<!-- result -->
+Foo Bar
 ```
 
 ### Self-applied definitions
 
 ```html
+<!-- use -->
 <foo# !>Wrapped</foo#>
 <bar$ !>Unwrapped</bar$>
+
 <!-- result -->
 <foo>Wrapped</foo>
 Unwrapped
@@ -68,53 +112,62 @@ Unwrapped
 ### HTML tags
 
 ```html
+<!-- use -->
 <h1>Foo</h1>
+
 <!-- result -->
 <h1>Foo</h1>
 ```
 
 ```html
+<!-- use -->
 <h1#>Foo</h1#>
+
 <!-- result -->
 (no error)
 ```
 
 ```html
+<!-- use -->
 <h1#>Foo</h1#>
 <h1></h1>
+
 <!-- result -->
 <h1>Foo</h1>
 ```
 
 ```html
+<!-- use -->
 <h1#>Foo</h1#>
 <h1>Bar</h1>
+
 <!-- result -->
 (error: to use text inside `h1` provide <text@></text@> placeholder)
 ```
 
 ```html
+<!-- use -->
 <h1#>Foo <text@></text@></h1#>
-
-<!-- apply 1 -->
 <h1>Bar</h1>
+
 <!-- result-->
 <h1>Foo Bar</h1>
 
-<!-- apply 2 -->
+<!-- use (cont.) -->
 <h1><p>Bar</p></h1>
+
 <!-- result -->
-(error: to use tags inside `h1` provide <elm@></elm@> or
-<any@></any@> placeholder)
+(error: to use elements inside `h1` provide a placeholder: <slot@></slot@>)
 ```
 
 ```html
+<!-- use -->
 <h1$>
   <p>Foo</p>
 </h1$>
+
 <!-- result -->
-(error: standard HTML tags cannot be used as inline definitions (consider using
-slots instead #))
+(error: standard HTML tags cannot be used as inline names)
 ```
 
 ### Structure definition
@@ -124,10 +177,12 @@ Possible options:
 - `[strict]`
 
 ```html
+<!-- use -->
 <user#>
   <age# :num></age#>
   <name# :str></name#>
 </user#>
+
 <!-- result (no error) -->
 <user>
   <age>30</age>
