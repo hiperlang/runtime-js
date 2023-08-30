@@ -1,0 +1,60 @@
+-- Hyper language code examples
+
+# Hello
+
+`This is paragraph`
+
+-- this is function
+.fib (.a :int)
+  if (a :0) =>
+    0
+  else =>
+    a + fib(a - 1)
+
+```
+
+The result of this
+function is ${fib(10)}
+
+```
+
+.User
+  .Name :str
+  .Age :int
+
+.table :User{*}
+  `Tom`, 1
+  `Mary`, 2
+  `John`, 3
+
+/<div>/<div>
+/<div>//<div>
+
+.tableStyle
+  @/<tr>/<td>
+    .color-blue
+    .text-bold
+
+<table>
+  for (table) |user| =>
+    <tr>
+      <td> user.name
+      <td> user.age
+
+
+.table $[block, c-blue] :type = `Hi everyone`
+  @args
+    .a :int
+    .b :int
+  @ret
+    User{*}
+  @style
+    color-blue
+    text-bold
+  @val
+    `Timur`, 29
+    `Timur`, 29
+    `Timur`, 29
+
+
+````
