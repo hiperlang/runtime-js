@@ -31,6 +31,11 @@ attr=""
 <foo></foo>
 ```
 
+## Modes of processing DOM
+
+1. Inplace Processing (Destructive): [inplace] (default)
+1. Non-Destructive (Immutable) Processing: [preserve]="at"
+
 ## Examples
 
 ### "Wrapping" definitions (slots)
