@@ -7,7 +7,7 @@
 
 /**
  * ***************************
- * Script Initialization
+ * Runtime Initialization
  * ***************************
  */
 
@@ -22,10 +22,10 @@ const SELF_SCRIPT = document.currentScript;
  * target separately.
  */
 document.addEventListener("DOMContentLoaded", () => {
-  // if [skip] set, don't do anything
+  // if `skip` set, don't do anything
   if (SELF_SCRIPT?.hasAttribute("skip")) return;
 
-  // avoid loading runtime multiple times
+  // check if runtime loaded multiple times
   if (SELF_SCRIPT?.hasAttribute("src")) {
     const url = SELF_SCRIPT.getAttribute("src");
     let counter = 0;
@@ -187,6 +187,7 @@ class Compiler {
     // special case
     if (i == 0 && this.stream.length == 0) return [``, 0];
 
+    // i must be within stream boundaries
     assert(
       i >= 0 && i < this.stream.length,
       RuntimeError.IndexOutOfBounds(i, this.stream.length)
@@ -279,18 +280,13 @@ function assert(cond: boolean, error: ErrorType) {
   if (!cond) throw error;
 }
 
-function isScriptLoadedAlready(url: string) {
-  return Array.from(document.getElementsByTagName("script")).some(
-    (script) => script.src === url
-  );
-}
-
 /**
  * ***************************
  * Error Types
  * ***************************
  */
-type ErrorType = { code: Function; message: string };
+type ErrorCode = Function;
+type ErrorType = { code: ErrorCode; message: string };
 
 const RuntimeError = {
   // remove
@@ -316,10 +312,12 @@ const RuntimeError = {
 
   IndexOutOfBounds: (i: number, length: number): ErrorType => ({
     code: RuntimeError.IndexOutOfBounds,
-    message: `Index (${i}) is out of stream boundaries ${
+    message: `Index (${i}) is out of stream boundaries. ${
       length == 0
-        ? `(stream is empty \`\`)`
-        : `[0..${length - 1}] (stream length is ${length}).`
+        ? `The stream is empty.`
+        : `For a stream of length ${length}, valid indices are within [0..${
+            length - 1
+          }].`
     }`,
   }),
 };
@@ -347,16 +345,16 @@ const RuntimeError = {
 
     constructor(
       public testName: string,
-      public testCases: { input: any; expect: any }[],
+      public testCases: { input: any; expect: any | ErrorCode }[],
       public testFunction: (input: any) => any,
       public equalityFunction?: (expected: any, obtained: any) => boolean
     ) {}
 
     run() {
       this.testCases.forEach((testCase, testIndex) => {
-        let obtained;
         try {
-          obtained = this.testFunction(testCase.input);
+          const obtained = this.testFunction(testCase.input);
+          this.testsObtained.push(obtained);
           const succeeded = this.equalityFunction
             ? this.equalityFunction(testCase.expect, obtained)
             : this.isEqual(testCase.expect, obtained);
@@ -365,11 +363,21 @@ const RuntimeError = {
           } else {
             this.testsFailed.push(testIndex);
           }
-        } catch (err: any) {
-          this.testsFailed.push(testIndex);
-          this.testsFailedErrMsg.set(testIndex, err.message || err.toString());
+        } catch (error) {
+          const err = error as ErrorType;
+          // console.log("CODE", err.code, "\nEXPECT", testCase.expect);
+          // console.log(err.code == testCase.expect);
+
+          if (err.code == testCase.expect) {
+            this.testsSucceeded.push(testIndex);
+          } else {
+            this.testsFailed.push(testIndex);
+            this.testsFailedErrMsg.set(
+              testIndex,
+              err?.message ? err.message : "undefined"
+            );
+          }
         }
-        this.testsObtained.push(obtained);
       });
 
       this.stats();
@@ -383,10 +391,16 @@ const RuntimeError = {
       output +=
         this.testsSucceeded.length == this.testCases.length ? `🟢` : `🔴`;
       // add test name
-      output += ` ${this.testName}\n`;
-      output += `----\n`;
+      output += ` ${this.testName}`;
+      // if succeeded
+      if (this.testsSucceeded.length == this.testCases.length) {
+        // add short stats
+        output += ` (${this.testsSucceeded.length}/${this.testCases.length})\n`;
+      }
       // if at least one case failed
-      if (this.testsSucceeded.length != this.testCases.length) {
+      else {
+        output += `\n`;
+        output += `----\n`;
         // add full stats
         output += `total:  ${this.testCases.length}\n`;
         output += `passed: ${this.testsSucceeded.length}\n`;
@@ -407,14 +421,13 @@ const RuntimeError = {
             output += `   obtained: `;
             output += this.testsFailedErrMsg.get(testIndex)
               ? `[Error] ${this.testsFailedErrMsg.get(testIndex)}\n`
-              : `${JSON.stringify(this.testsObtained[testIndex])}`;
+              : `${JSON.stringify(this.testsObtained[testIndex])}\n`;
             output += `   ----\n`;
           }
         });
-
-        // flash
-        console.log(output);
       }
+      // flash
+      console.log(output);
     }
 
     isEqual(expected: any, obtained: any): boolean {
@@ -432,7 +445,7 @@ const RuntimeError = {
     [
       {
         input: [`\n`, 0],
-        expect: [`\\n`, 0],
+        expect: [``, 0],
       },
       {
         input: [` \n`, 0],
@@ -440,7 +453,7 @@ const RuntimeError = {
       },
       {
         input: [``, 1],
-        expect: [``, 1],
+        expect: RuntimeError.IndexOutOfBounds,
       },
       {
         input: [` `, 0],
@@ -449,7 +462,7 @@ const RuntimeError = {
       // (cursor outside the stream)
       {
         input: [` `, 1],
-        expect: [` `, 0],
+        expect: RuntimeError.IndexOutOfBounds,
       },
     ],
     (input: [string, number]) => {
