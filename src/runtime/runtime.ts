@@ -7,172 +7,266 @@
 
 /**
  * ***************************
- * Types
- * ***************************
- */
-
-class TargetNode {
-  readonly origin: Element;
-  currNode: Element;
-  scope: ScopeManager = new ScopeManager();
-  supportedAttrs: Set<string>;
-
-  // supportsAttribute(): boolean
-
-  assertAttributeSupport(name: string) {
-    assert(
-      this.supportedAttrs.has(name),
-      `Attribute \`${name}\` is not supported by "${this.currNode.nodeName}" target`
-    );
-  }
-
-  getAttribute(name: string): string | undefined {
-    this.assertAttributeSupport(name);
-    const attr = this.currNode.attributes.getNamedItem(name);
-    return attr?.value;
-  }
-
-  hasAttribute(name: string): boolean {
-    this.assertAttributeSupport(name);
-    return this.currNode.attributes.getNamedItem(name) != null;
-  }
-
-  constructor(origin: Element, supportedAttrs: string[]) {
-    this.origin = origin;
-    this.currNode = origin;
-    this.supportedAttrs = new Set(supportedAttrs);
-  }
-}
-
-class ScopeManager {
-  scopes: Map<string, Element>[] = [];
-
-  currentScope() {
-    return this.scopes[this.scopes.length - 1];
-  }
-
-  newScope() {
-    this.scopes.push(new Map<string, Element>());
-  }
-
-  leaveScope() {
-    if (this.scopes.length > 0) {
-      this.scopes.pop();
-    }
-  }
-
-  addName(name: string, node: Element) {
-    this.currentScope().set(name, node);
-  }
-
-  // find a name traversing scopes upwards
-  resolveName(name: string): Element | undefined {
-    for (let i = this.scopes.length - 1; i >= 0; i--) {
-      if (this.scopes[i].has(name)) {
-        return this.scopes[i].get(name);
-      }
-    }
-    return undefined;
-  }
-}
-
-/**
- * ***************************
- * Global State
- * ***************************
- */
-
-const TARGET_NODES: TargetNode[] = [];
-const TARGET_OPTIONS = ["[skip]"];
-
-let RUNTIME_LOADING_NODE: TargetNode | null = null;
-const RUNTIME_LOADING_OPTIONS = ["[scope]", "[skip]"];
-
-/**
- * ***************************
- * State Initialization
+ * Script Initialization
  * ***************************
  */
 
 /**
- * This block executes as soon as the document begins to load. Check if we
- * have access to the <script> element to import hyper options.
+ * Save currentScript as soon as possible to have an access to the runtime
+ * loading <script> later on.
  */
-initRuntimeLoadingNode();
+const SELF_SCRIPT = document.currentScript;
 
 /**
- * Initialize targets as soon as the document is fully loaded and
- * start parsing each target separately.
+ * Start Hyper runtime when the document is fully loaded and run it on each
+ * target separately.
  */
 document.addEventListener("DOMContentLoaded", () => {
-  initTargetNodes();
-  parseTargetNodes();
+  // if [skip] set, don't do anything
+  if (SELF_SCRIPT?.hasAttribute("skip")) return;
+
+  // avoid loading runtime multiple times
+  if (SELF_SCRIPT?.hasAttribute("src")) {
+    const url = SELF_SCRIPT.getAttribute("src");
+    let counter = 0;
+    Array.from(document.getElementsByTagName("script")).forEach((script) => {
+      if (script.getAttribute("src") === url!) counter++;
+    });
+    assert(counter == 1, RuntimeError.LoadedMultipleTimes(url!));
+  }
+
+  // set default target
+  let targets = [document.body];
+
+  // however
+  if (SELF_SCRIPT?.hasAttribute("scope")) {
+    const query = SELF_SCRIPT.getAttribute("scope");
+    assert(query != "", RuntimeError.LoadedScopeEmpty());
+    // override defaults
+    targets = Array.from(document.querySelectorAll(query!));
+    assert(targets.length > 0, RuntimeError.LoadedScopeNotFound(query!));
+  }
+
+  // start runtime
+  const runtime = new Runtime(targets);
+  runtime.runOnTargets();
 });
 
-function initTargetNodes() {
-  if (RUNTIME_LOADING_NODE?.hasAttribute("[skip]")) return;
-  if (RUNTIME_LOADING_NODE?.hasAttribute("[scope]")) {
-    const scope = RUNTIME_LOADING_NODE.getAttribute("[scope]");
-    assert(
-      scope != "",
-      `<script> loading hyper runtime has [scope] attribute set to "" (empty), which means no matching elements could be found for runtime to operate on. If you want to temporarily disable runtime, consider using [skip] attribute instead.`
-    );
-    const targets = document.querySelectorAll(scope!);
-    assert(
-      targets.length > 0,
-      `<script> loading hyper runtime has [scope] attribute set to \`${scope}\`, but no matching elements were found.`
-    );
-    targets.forEach((target) => {
-      TARGET_NODES.push(new TargetNode(target, TARGET_OPTIONS));
-    });
-  } else {
-    TARGET_NODES.push(new TargetNode(document.body, TARGET_OPTIONS));
-  }
-}
+/**
+ * ***************************
+ * Runtime
+ * ***************************
+ */
 
-function initRuntimeLoadingNode() {
-  if (document.currentScript) {
-    RUNTIME_LOADING_NODE = new TargetNode(
-      document.currentScript,
-      RUNTIME_LOADING_OPTIONS
-    );
+class Runtime {
+  targets: Element[] = [];
+
+  runOnTargets() {
+    this.targets.forEach((target) => {
+      const compiler = new Compiler(target.innerHTML);
+      compiler.compile();
+    });
+  }
+
+  constructor(targets: Element[]) {
+    this.targets = targets;
   }
 }
 
 /**
  * ***************************
- * Parsing
+ * Compiler
  * ***************************
  */
 
-function parseTargetNodes() {
-  TARGET_NODES.forEach((target) => {
-    parseNode(target);
-  });
-}
+class Compiler {
+  i: number = 0;
+  c_line: number = 1;
+  c_lvl: number = 0; // indent level
+  c_tabsize: number = 0; // indent length
+  trim_size: number = -1; // indent length before actual payload starts for every line
+  tree: Map<string, string>[] = [new Map()]; // AST
+  stream: string = "";
 
-function parseHyperBlock(target: TargetNode) {
-  target.scope.addName(target.currNode.nodeName, target.currNode);
-  target.currNode.setAttribute("hidden", "");
-}
+  constructor(stream: string) {
+    this.stream = stream;
+  }
 
-function parseNode(target: TargetNode) {
-  target.scope.newScope();
-  target.currNode.childNodes.forEach((child) => {
-    if (child.nodeType != Node.ELEMENT_NODE) return;
+  // TODO
+  // setStream
+  // appendStream
 
-    if (child.nodeName.endsWith("#")) {
-      target.currNode = child as Element;
-      parseHyperBlock(target);
-    } else {
-      if (HTML_TAG_NAMES.has(child.nodeName)) return;
+  // scanning naming convention:
+  // trySpace -- move i forward
+  // expectSpace -- move i forward to check and rewind it back
+  // mustSpace -- expect+scan
 
-      const elm = target.scope.resolveName(child.nodeName + "#");
-      assert(elm != undefined, "Definition not found");
-      child.replaceWith(elm!.cloneNode(true));
+  currChar() {
+    return this.stream[this.i];
+  }
+
+  scanSpace(): number {
+    let lead_space = 0;
+    while (true) {
+      switch (this.stream[this.i]) {
+        case " ":
+          lead_space++;
+          break;
+        case "\n":
+          this.c_line++;
+          lead_space = 0;
+          break;
+        default:
+          return lead_space;
+      }
+      this.i++;
     }
-  });
-  console.log(target.scope);
+  }
+
+  compile() {
+    if (this.stream == "") return;
+    this.scanNext();
+  }
+
+  scanNext() {
+    // enterLevel
+    while (this.i < this.stream.length) {
+      let lead_space_size = this.scanSpace();
+
+      // detect trim size (once)
+      if (this.trim_size < 0) {
+        this.trim_size = lead_space_size;
+      }
+
+      // remove trimming space
+      lead_space_size -= this.trim_size;
+
+      // if (trimmed) leading space > 0 then
+      if (lead_space_size > 0) {
+        // set indentation size (once)
+        if (this.c_tabsize < 0) {
+          this.c_tabsize = lead_space_size;
+        }
+        // if but not aligned with tab size
+        if (lead_space_size != this.c_lvl * this.c_tabsize) {
+          throw RuntimeError.TODO("Indentation is not aligned");
+        } else {
+          this.c_lvl++;
+          this.tree.push(new Map());
+        }
+      }
+
+      this.syntaxErr(52);
+
+      break;
+      this.i++;
+    }
+  }
+
+  syntaxErr(
+    shift: number = 0,
+    linesBefore: number = 2,
+    linesAfter: number = 2
+  ) {
+    if (linesBefore < 0 || linesAfter < 0)
+      throw RuntimeError.TODO(
+        "linesBefore and linesAfter cannot be negative numbers"
+      );
+
+    // add shift to i
+    const this_i = this.addInRange(this.i, shift, 0, this.stream.length - 1);
+  }
+
+  getPrettyLineAroundI(i: number = this.i) {
+    // if (this.stream[i] == "\n")
+    //   result = this.getLineAroundI(i - 1);
+    //   result += "\\n";
+  }
+
+  getLineAroundI(i: number = this.i): [string, number] {
+    // special case
+    if (i == 0 && this.stream.length == 0) return [``, 0];
+
+    assert(
+      i >= 0 && i < this.stream.length,
+      RuntimeError.IndexOutOfBounds(i, this.stream.length)
+    );
+
+    // add before/after the current position trackers
+    let ib = i;
+    let ia = i;
+
+    // if current position is new line, relate it to the previous line
+    if (this.stream[i] == "\n") ib -= 1;
+
+    // init resulting line
+    let line = "";
+
+    // track the part before the current position
+    for (; ib >= 0 && this.stream[ib] != "\n"; ib--) {}
+
+    // set position before to the beginning of the line
+    ib = ib < 0 ? 0 : ib + 1;
+
+    // track the part after the current position
+    for (; ia < this.stream.length && this.stream[ia] != "\n"; ia++) {}
+
+    // form the line
+    line = this.stream.slice(ib, ia) + line;
+
+    // shift i relative to the beginning of the line
+    return [line, i - ib];
+  }
+
+  getLinesBeforeI(amount: number, i: number) {}
+  getLinesAfterI(amount: number, i: number) {}
+
+  getNonPrintCharName(char: string) {
+    switch (char) {
+      case undefined:
+        return "eof";
+      case " ":
+        return "space";
+      case "\n":
+        return "new_line";
+      case "\t":
+        return "tab_char";
+    }
+  }
+
+  logStreamAfterI() {
+    console.log(this.stream.slice(this.i, this.stream.length));
+  }
+
+  logStreamBeforeI() {
+    console.log(this.stream.slice(0, this.i + 1));
+  }
+
+  logCurrChar() {
+    console.log(
+      `curr char: ${this.currChar()} (${this.getNonPrintCharName(
+        this.currChar()
+      )})`
+    );
+  }
+
+  logSelf() {
+    console.log("this.stream:\n", this.stream);
+    console.log("this.i: " + this.i);
+    console.log("this.c_line: " + this.c_line);
+    console.log("this.c_lvl: " + this.c_lvl);
+    console.log(
+      "this.tree: " + (this.tree.length == 0 ? "[empty]" : this.tree)
+    );
+  }
+
+  addInRange(a: number, b: number, min: number, max: number) {
+    const sum = a + b;
+    // overflow/underflow check
+    if (sum > max) return max;
+    if (sum < min) return min;
+    return sum;
+  }
 }
 
 /**
@@ -181,131 +275,189 @@ function parseNode(target: TargetNode) {
  * ***************************
  */
 
-function assert(cond: boolean, msg: string) {
-  if (!cond) throw Error("Hyper.ParseError: " + msg);
+function assert(cond: boolean, error: ErrorType) {
+  if (!cond) throw error;
 }
 
-const HTML_TAG_NAMES = new Set<string>([
-  "A",
-  "ABBR",
-  "ACRONYM",
-  "ADDRESS",
-  "APPLET",
-  "AREA",
-  "ARTICLE",
-  "ASIDE",
-  "AUDIO",
-  "B",
-  "BASE",
-  "BASEFONT",
-  "BDI",
-  "BDO",
-  "BIG",
-  "BLOCKQUOTE",
-  "BODY",
-  "BR",
-  "BUTTON",
-  "CANVAS",
-  "CAPTION",
-  "CENTER",
-  "CITE",
-  "CODE",
-  "COL",
-  "COLGROUP",
-  "DATA",
-  "DATALIST",
-  "DD",
-  "DEL",
-  "DETAILS",
-  "DFN",
-  "DIALOG",
-  "DIR",
-  "DIV",
-  "DL",
-  "DT",
-  "EM",
-  "EMBED",
-  "FIELDSET",
-  "FIGCAPTION",
-  "FIGURE",
-  "FONT",
-  "FOOTER",
-  "FORM",
-  "FRAME",
-  "FRAMESET",
-  "H1",
-  "H2",
-  "H3",
-  "H4",
-  "H5",
-  "H6",
-  "HEAD",
-  "HEADER",
-  "HR",
-  "HTML",
-  "I",
-  "IFRAME",
-  "IMG",
-  "INPUT",
-  "INS",
-  "KBD",
-  "LABEL",
-  "LEGEND",
-  "LI",
-  "LINK",
-  "MAIN",
-  "MAP",
-  "MARK",
-  "META",
-  "METER",
-  "NAV",
-  "NOFRAMES",
-  "NOSCRIPT",
-  "OBJECT",
-  "OL",
-  "OPTGROUP",
-  "OPTION",
-  "OUTPUT",
-  "P",
-  "PARAM",
-  "PICTURE",
-  "PRE",
-  "PROGRESS",
-  "Q",
-  "RP",
-  "RT",
-  "RUBY",
-  "S",
-  "SAMP",
-  "SCRIPT",
-  "SECTION",
-  "SELECT",
-  "SMALL",
-  "SOURCE",
-  "SPAN",
-  "STRIKE",
-  "STRONG",
-  "STYLE",
-  "SUB",
-  "SUMMARY",
-  "SUP",
-  "SVG",
-  "TABLE",
-  "TBODY",
-  "TD",
-  "TEMPLATE",
-  "TEXTAREA",
-  "TFOOT",
-  "TH",
-  "THEAD",
-  "TIME",
-  "TITLE",
-  "TR",
-  "TRACK",
-  "TT",
-  "U",
-  "UL",
-  "VAR",
-  "VIDEO",
-  "WBR",
-]);
+function isScriptLoadedAlready(url: string) {
+  return Array.from(document.getElementsByTagName("script")).some(
+    (script) => script.src === url
+  );
+}
+
+/**
+ * ***************************
+ * Error Types
+ * ***************************
+ */
+type ErrorType = { code: Function; message: string };
+
+const RuntimeError = {
+  // remove
+  TODO: (msg: string): ErrorType => ({
+    code: RuntimeError.TODO,
+    message: `This is mock ${msg}.`,
+  }),
+
+  LoadedMultipleTimes: (url: string): ErrorType => ({
+    code: RuntimeError.LoadedMultipleTimes,
+    message: `To prevent unexpected behavior, ensure Hyper runtime is loaded once. Consider using a single <script src="${url}"></script> in your project's file.`,
+  }),
+
+  LoadedScopeEmpty: (): ErrorType => ({
+    code: RuntimeError.LoadedScopeEmpty,
+    message: `<script> loading hyper runtime has attribute \`scope\` set to "" (empty). It means no matching elements could be found to operate on. To temporarily disable the runtime, use \`skip\` instead.`,
+  }),
+
+  LoadedScopeNotFound: (query: string): ErrorType => ({
+    code: RuntimeError.LoadedScopeNotFound,
+    message: `<script> loading hyper runtime has \`scope\` attribute set to "${query}", but no matching elements were found.`,
+  }),
+
+  IndexOutOfBounds: (i: number, length: number): ErrorType => ({
+    code: RuntimeError.IndexOutOfBounds,
+    message: `Index (${i}) is out of stream boundaries ${
+      length == 0
+        ? `(stream is empty \`\`)`
+        : `[0..${length - 1}] (stream length is ${length}).`
+    }`,
+  }),
+};
+
+/**
+ * ***************************
+ * Testing
+ * ***************************
+ */
+
+(function () {
+  // return;
+
+  /**
+   * ***************************
+   * Testing Framework
+   * ***************************
+   */
+
+  class Test {
+    testsObtained: {}[] = [];
+    testsSucceeded: number[] = [];
+    testsFailed: number[] = [];
+    testsFailedErrMsg = new Map<number, string>();
+
+    constructor(
+      public testName: string,
+      public testCases: { input: any; expect: any }[],
+      public testFunction: (input: any) => any,
+      public equalityFunction?: (expected: any, obtained: any) => boolean
+    ) {}
+
+    run() {
+      this.testCases.forEach((testCase, testIndex) => {
+        let obtained;
+        try {
+          obtained = this.testFunction(testCase.input);
+          const succeeded = this.equalityFunction
+            ? this.equalityFunction(testCase.expect, obtained)
+            : this.isEqual(testCase.expect, obtained);
+          if (succeeded) {
+            this.testsSucceeded.push(testIndex);
+          } else {
+            this.testsFailed.push(testIndex);
+          }
+        } catch (err: any) {
+          this.testsFailed.push(testIndex);
+          this.testsFailedErrMsg.set(testIndex, err.message || err.toString());
+        }
+        this.testsObtained.push(obtained);
+      });
+
+      this.stats();
+    }
+
+    stats() {
+      // print buffer
+      let output = ``;
+
+      // add test status
+      output +=
+        this.testsSucceeded.length == this.testCases.length ? `🟢` : `🔴`;
+      // add test name
+      output += ` ${this.testName}\n`;
+      output += `----\n`;
+      // if at least one case failed
+      if (this.testsSucceeded.length != this.testCases.length) {
+        // add full stats
+        output += `total:  ${this.testCases.length}\n`;
+        output += `passed: ${this.testsSucceeded.length}\n`;
+        output += `failed: ${this.testsFailed.length}\n`;
+        output += `----\n`;
+        // per each case
+        this.testCases.forEach((testCase, testIndex) => {
+          // if succeeded, add only status
+          if (this.testsSucceeded.includes(testIndex)) {
+            output += `🟢 ${testIndex + 1}/${this.testCases.length} passed\n`;
+          }
+          // if failed, add status and details
+          else {
+            output += `🔴 ${testIndex + 1}/${this.testCases.length} failed\n`;
+            output += `   ----\n`;
+            output += `   input:    ${JSON.stringify(testCase.input)}\n`;
+            output += `   expected: ${JSON.stringify(testCase.expect)}\n`;
+            output += `   obtained: `;
+            output += this.testsFailedErrMsg.get(testIndex)
+              ? `[Error] ${this.testsFailedErrMsg.get(testIndex)}\n`
+              : `${JSON.stringify(this.testsObtained[testIndex])}`;
+            output += `   ----\n`;
+          }
+        });
+
+        // flash
+        console.log(output);
+      }
+    }
+
+    isEqual(expected: any, obtained: any): boolean {
+      return JSON.stringify(expected) === JSON.stringify(obtained);
+    }
+  }
+
+  /**
+   * ***************************
+   * Testing
+   * ***************************
+   */
+  new Test(
+    "getLineAroundI",
+    [
+      {
+        input: [`\n`, 0],
+        expect: [`\\n`, 0],
+      },
+      {
+        input: [` \n`, 0],
+        expect: [` `, 0],
+      },
+      {
+        input: [``, 1],
+        expect: [``, 1],
+      },
+      {
+        input: [` `, 0],
+        expect: [` `, 0],
+      },
+      // (cursor outside the stream)
+      {
+        input: [` `, 1],
+        expect: [` `, 0],
+      },
+    ],
+    (input: [string, number]) => {
+      const stream = input[0];
+      const i = input[1];
+      const c = new Compiler(stream);
+      // console.log(JSON.stringify(c.stream));
+      return c.getLineAroundI(i);
+    }
+  ).run();
+})();
