@@ -22,10 +22,10 @@ const SELF_SCRIPT = document.currentScript;
  * target separately.
  */
 document.addEventListener("DOMContentLoaded", () => {
-  // if `skip` set, don't do anything
+  // If `skip` set, don't do anything
   if (SELF_SCRIPT?.hasAttribute("skip")) return;
 
-  // check if runtime loaded multiple times
+  // Check if runtime loaded multiple times
   if (SELF_SCRIPT?.hasAttribute("src")) {
     const url = SELF_SCRIPT.getAttribute("src");
     let counter = 0;
@@ -35,10 +35,10 @@ document.addEventListener("DOMContentLoaded", () => {
     assert(counter == 1, RuntimeError.LoadedMultipleTimes(url!));
   }
 
-  // set default target
+  // Set default target
   let targets = [document.body];
 
-  // however
+  // However
   if (SELF_SCRIPT?.hasAttribute("scope")) {
     const query = SELF_SCRIPT.getAttribute("scope");
     assert(query != "", RuntimeError.LoadedScopeEmpty());
@@ -184,8 +184,8 @@ class Compiler {
   }
 
   getLineAroundI(i: number = this.i): [string, number] {
-    // special case
-    if (i == 0 && this.stream.length == 0) return [``, 0];
+    // stream shouldn't be empty
+    assert(this.stream.length != 0, RuntimeError.StreamIsEmpty());
 
     // i must be within stream boundaries
     assert(
@@ -193,29 +193,29 @@ class Compiler {
       RuntimeError.IndexOutOfBounds(i, this.stream.length)
     );
 
-    // add before/after the current position trackers
+    // Add before/after the current position trackers
     let ib = i;
     let ia = i;
 
-    // if current position is new line, relate it to the previous line
+    // If current position is new line, relate it to the previous line
     if (this.stream[i] == "\n") ib -= 1;
 
-    // init resulting line
+    // Init resulting line
     let line = "";
 
-    // track the part before the current position
+    // Track the part before the current position
     for (; ib >= 0 && this.stream[ib] != "\n"; ib--) {}
 
-    // set position before to the beginning of the line
+    // Set position before to the beginning of the line
     ib = ib < 0 ? 0 : ib + 1;
 
-    // track the part after the current position
+    // Track the part after the current position
     for (; ia < this.stream.length && this.stream[ia] != "\n"; ia++) {}
 
-    // form the line
+    // Form the line
     line = this.stream.slice(ib, ia) + line;
 
-    // shift i relative to the beginning of the line
+    // Shift i relative to the beginning of the line
     return [line, i - ib];
   }
 
@@ -285,32 +285,32 @@ function assert(cond: boolean, error: ErrorType) {
  * Error Types
  * ***************************
  */
-type ErrorCode = Function;
-type ErrorType = { code: ErrorCode; message: string };
 
-const RuntimeError = {
+type ErrorType = { code: Function; message: string };
+
+class RuntimeError {
   // remove
-  TODO: (msg: string): ErrorType => ({
+  static TODO = (msg: string): ErrorType => ({
     code: RuntimeError.TODO,
     message: `This is mock ${msg}.`,
-  }),
+  });
 
-  LoadedMultipleTimes: (url: string): ErrorType => ({
+  static LoadedMultipleTimes = (url: string): ErrorType => ({
     code: RuntimeError.LoadedMultipleTimes,
     message: `To prevent unexpected behavior, ensure Hyper runtime is loaded once. Consider using a single <script src="${url}"></script> in your project's file.`,
-  }),
+  });
 
-  LoadedScopeEmpty: (): ErrorType => ({
+  static LoadedScopeEmpty = (): ErrorType => ({
     code: RuntimeError.LoadedScopeEmpty,
     message: `<script> loading hyper runtime has attribute \`scope\` set to "" (empty). It means no matching elements could be found to operate on. To temporarily disable the runtime, use \`skip\` instead.`,
-  }),
+  });
 
-  LoadedScopeNotFound: (query: string): ErrorType => ({
+  static LoadedScopeNotFound = (query: string): ErrorType => ({
     code: RuntimeError.LoadedScopeNotFound,
     message: `<script> loading hyper runtime has \`scope\` attribute set to "${query}", but no matching elements were found.`,
-  }),
+  });
 
-  IndexOutOfBounds: (i: number, length: number): ErrorType => ({
+  static IndexOutOfBounds = (i: number, length: number): ErrorType => ({
     code: RuntimeError.IndexOutOfBounds,
     message: `Index (${i}) is out of stream boundaries. ${
       length == 0
@@ -319,8 +319,13 @@ const RuntimeError = {
             length - 1
           }].`
     }`,
-  }),
-};
+  });
+
+  static StreamIsEmpty = (): ErrorType => ({
+    code: RuntimeError.StreamIsEmpty,
+    message: `The stream is empty.`,
+  });
+}
 
 /**
  * ***************************
@@ -338,44 +343,58 @@ const RuntimeError = {
    */
 
   class Test {
-    testsObtained: {}[] = [];
-    testsSucceeded: number[] = [];
-    testsFailed: number[] = [];
-    testsFailedErrMsg = new Map<number, string>();
+    testResults: any[] = [];
+    failedTests = new Map<number, number>();
 
+    // TODO: accept object {testName: "Name", ...} instead to initialize
     constructor(
       public testName: string,
-      public testCases: { input: any; expect: any | ErrorCode }[],
+      public testCases: (
+        | { input: any; expect: any }
+        | { input: any; expectErr: any }
+      )[],
       public testFunction: (input: any) => any,
-      public equalityFunction?: (expected: any, obtained: any) => boolean
+      public equalFunction: (
+        expected: any,
+        obtained: any
+      ) => boolean = Test.isEqual,
+      public errEqualFunction: (
+        expectedErr: any,
+        obtainedErr: any
+      ) => boolean = Test.errIsEqual
     ) {}
 
     run() {
       this.testCases.forEach((testCase, testIndex) => {
+        // 4 possible reasons a test case can fail:
         try {
+          // If the test function went well
           const obtained = this.testFunction(testCase.input);
-          this.testsObtained.push(obtained);
-          const succeeded = this.equalityFunction
-            ? this.equalityFunction(testCase.expect, obtained)
-            : this.isEqual(testCase.expect, obtained);
-          if (succeeded) {
-            this.testsSucceeded.push(testIndex);
-          } else {
-            this.testsFailed.push(testIndex);
-          }
-        } catch (error) {
-          const err = error as ErrorType;
-          // console.log("CODE", err.code, "\nEXPECT", testCase.expect);
-          // console.log(err.code == testCase.expect);
+          this.testResults.push(obtained);
 
-          if (err.code == testCase.expect) {
-            this.testsSucceeded.push(testIndex);
+          // But an error was expected
+          if ("expectErr" in testCase) {
+            this.failedTests.set(testIndex, 1);
           } else {
-            this.testsFailed.push(testIndex);
-            this.testsFailedErrMsg.set(
-              testIndex,
-              err?.message ? err.message : "undefined"
-            );
+            // Or the obtained result doesn't match the expected result
+            if (!this.equalFunction(testCase.expect, obtained)) {
+              this.failedTests.set(testIndex, 0);
+            }
+          }
+        } catch (err) {
+          // If the test function threw an exception
+          const error = err as ErrorType; // cast
+          this.testResults.push(error);
+
+          // Check if an error was expected
+          if ("expectErr" in testCase) {
+            // Check if the obtained error code matches the expected error code
+            if (!this.equalFunction(testCase.expectErr, error.code)) {
+              this.failedTests.set(testIndex, 2);
+            }
+          } else {
+            // Handle unexpected errors
+            this.failedTests.set(testIndex, 3);
           }
         }
       });
@@ -383,55 +402,125 @@ const RuntimeError = {
       this.stats();
     }
 
-    stats() {
-      // print buffer
-      let output = ``;
-
-      // add test status
-      output +=
-        this.testsSucceeded.length == this.testCases.length ? `🟢` : `🔴`;
-      // add test name
-      output += ` ${this.testName}`;
-      // if succeeded
-      if (this.testsSucceeded.length == this.testCases.length) {
-        // add short stats
-        output += ` (${this.testsSucceeded.length}/${this.testCases.length})\n`;
+    static failCodeToString(code: number): string {
+      switch (code) {
+        case 0:
+          return `Obtained function result doesn't match the expected result.`;
+        case 1:
+          return `Expected an error but the function succeeded.`;
+        case 2:
+          return `Obtained function error doesn't match the expected error.`;
+        case 3:
+          return `Expected a normal result but function threw an error.`;
+        default:
+          return `Wrong error code.`;
       }
-      // if at least one case failed
-      else {
-        output += `\n`;
-        output += `----\n`;
-        // add full stats
+    }
+
+    stats() {
+      // Initialize output buffer
+      let output = "";
+
+      // Display overall test status
+      if (this.failedTests.size === 0) {
+        output += "🟢"; // All tests passed
+      } else {
+        output += "🔴"; // At least one test failed
+      }
+
+      // Display test name
+      output += ` ${this.testName}`;
+
+      // Display short stats if all tests passed
+      if (this.failedTests.size === 0) {
+        output += ` (${this.testCases.length - this.failedTests.size}/${
+          this.testCases.length
+        })\n`;
+      } else {
+        // Display full stats if at least one test failed
+        output += "\n";
+        output += "----\n";
         output += `total:  ${this.testCases.length}\n`;
-        output += `passed: ${this.testsSucceeded.length}\n`;
-        output += `failed: ${this.testsFailed.length}\n`;
+        output += `passed: ${this.testCases.length - this.failedTests.size}\n`;
+        output += `failed: ${this.failedTests.size}\n`;
         output += `----\n`;
-        // per each case
+
+        // For each test case
         this.testCases.forEach((testCase, testIndex) => {
-          // if succeeded, add only status
-          if (this.testsSucceeded.includes(testIndex)) {
-            output += `🟢 ${testIndex + 1}/${this.testCases.length} passed\n`;
-          }
-          // if failed, add status and details
-          else {
+          if (this.failedTests.has(testIndex)) {
+            // Display status
             output += `🔴 ${testIndex + 1}/${this.testCases.length} failed\n`;
             output += `   ----\n`;
-            output += `   input:    ${JSON.stringify(testCase.input)}\n`;
-            output += `   expected: ${JSON.stringify(testCase.expect)}\n`;
-            output += `   obtained: `;
-            output += this.testsFailedErrMsg.get(testIndex)
-              ? `[Error] ${this.testsFailedErrMsg.get(testIndex)}\n`
-              : `${JSON.stringify(this.testsObtained[testIndex])}\n`;
+
+            // Display fail reason
+            const failCode = this.failedTests.get(testIndex);
+            output += `   reason:      `;
+            output += `${Test.failCodeToString(failCode!)}\n`;
+
+            // Display function input
+            output += `   input:       ${JSON.stringify(testCase.input)}\n`;
+
+            // Display what function was expected to return
+            if (`expectErr` in testCase) {
+              output += `   expectedErr: ${testCase.expectErr.name}\n`;
+            } else {
+              output += `   expectedRes: ${JSON.stringify(testCase.expect)}\n`;
+            }
+
+            // Display what function returned
+            const obtained = this.testResults[testIndex];
+            if (failCode == 2 || failCode == 3) {
+              output += `   obtainedErr: `;
+              output += `${(obtained as ErrorType).code.name}\n`;
+              output += `   errMessage:  `;
+              output += `${(obtained as ErrorType).message}\n`;
+            } else {
+              output += `   obtainedRes: `;
+              output += `${JSON.stringify(obtained)}\n`;
+            }
             output += `   ----\n`;
+          } else {
+            // Display just status for succeeded cases
+            output += `🟢 ${testIndex + 1}/${this.testCases.length} passed\n`;
           }
         });
       }
-      // flash
+
+      // Flash the output
       console.log(output);
     }
 
-    isEqual(expected: any, obtained: any): boolean {
-      return JSON.stringify(expected) === JSON.stringify(obtained);
+    static errIsEqual(expectedErr: any, obtainedErr: ErrorType): boolean {
+      return Test.isEqual(expectedErr, obtainedErr.code);
+    }
+
+    static isEqual(expected: any, obtained: any): boolean {
+      // try direct comparison
+      if (expected === obtained) {
+        return true;
+      }
+
+      // try recursive array comparison
+      if (Array.isArray(expected) && Array.isArray(obtained)) {
+        if (expected.length !== obtained.length) return false;
+        for (let i = 0; i < expected.length; i++) {
+          if (!Test.isEqual(expected[i], obtained[i])) return false;
+        }
+        return true;
+      }
+
+      // try Function comparison
+      if (expected instanceof Function && obtained instanceof Function) {
+        return expected === obtained;
+      }
+
+      // try JSON serialization comparison
+      if (JSON.stringify(expected) === JSON.stringify(obtained)) {
+        return true;
+      }
+
+      // no luck
+      return false;
     }
   }
 
@@ -440,6 +529,10 @@ const RuntimeError = {
    * Testing
    * ***************************
    */
+  // 1 succeeded
+  // 2 succeeded but error expected (no matter which)
+  // 3 failed as expected but error mismatch
+  // 4 failed as expected and errors match
   new Test(
     "getLineAroundI",
     [
@@ -453,17 +546,17 @@ const RuntimeError = {
       },
       {
         input: [``, 1],
-        expect: RuntimeError.IndexOutOfBounds,
+        expectErr: RuntimeError.StreamIsEmpty,
+      },
+      {
+        input: [` `, 1],
+        expectErr: RuntimeError.IndexOutOfBounds,
       },
       {
         input: [` `, 0],
         expect: [` `, 0],
       },
       // (cursor outside the stream)
-      {
-        input: [` `, 1],
-        expect: RuntimeError.IndexOutOfBounds,
-      },
     ],
     (input: [string, number]) => {
       const stream = input[0];
