@@ -12,20 +12,20 @@
     a + fib(a - 1)
 
 ```
-
 The result of this
 function is ${fib(10)}
-
 ```
 
 .User
   .Name :str
   .Age :int
 
-.table :User{*}
+.table :User{*} #blue #block
   `Tom`, 1
   `Mary`, 2
   `John`, 3
+
+<table...> -- project structure into HTML 
 
 /<div>/<div>
 /<div>//<div>
@@ -42,7 +42,7 @@ function is ${fib(10)}
       <td> user.age
 
 
-.table $[block, c-blue] :type = `Hi everyone`
+.table :type = `Hi everyone`
   @args
     .a :int
     .b :int
@@ -55,6 +55,3 @@ function is ${fib(10)}
     `Timur`, 29
     `Timur`, 29
     `Timur`, 29
-
-
-````
