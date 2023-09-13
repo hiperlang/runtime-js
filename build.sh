@@ -2,7 +2,7 @@
 
 bunx conc --kill-others \
     "esbuild \
-    src/runtime/runtime.ts \
+    src/runtime/tests.ts \
     --bundle \
     --format=iife \
     --global-name=hyper \
@@ -18,7 +18,16 @@ bunx conc --kill-others \
     \
     "wds \
     --root-dir=out \
+    --app-index=out/runtime/index.html \
     --watch" \
     \
-    
+
+#  "bun build \
+#     src/runtime/runtime.ts \
+#     --sourcemap external \
+#     --asset-naming=[dir]/[name].[ext] \
+#     --entry-naming=[dir]/[name].[ext] \
+#     --outdir=out/runtime \
+#     --watch" \
+
 # bunx postcss src/**/*.css --dir build/ --watch
