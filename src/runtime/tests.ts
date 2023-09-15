@@ -1,21 +1,20 @@
-import { Test, Tester, Errors, Cursor } from "./runtime";
+import { Test, Tester as TestsRunner, Errors, Cursor } from "./runtime";
 
 /**
  * ***************************
- * getLineAroundI
+ * getLineAround
  * ***************************
  */
 
-const tester = new Tester();
+const tester = new TestsRunner();
 tester.add(
   new Test({
-    name: "getLineAroundI",
+    name: "getLineAround",
     cases: [
       {
         name: "Single empty line test",
         input: [`\n`, 0],
         expect: [`\n`, 0],
-        // focus: true,
       },
       {
         name: "Double empty line test",
@@ -48,15 +47,15 @@ tester.add(
         expect: [`def\n`, 0],
       },
     ],
-    func: (stream: string, i: number) => {
-      return new Cursor(stream).updateI(i).getLineAroundI();
+    testFunc: (stream: string, i: number) => {
+      return new Cursor(stream).getLineAround(i);
     },
   })
 );
 
 /**
  * ***************************
- * getLinesBeforeI
+ * getLinesBefore
  * ***************************
  */
 
@@ -67,7 +66,7 @@ tester.add(
       // input: stream, number of lines, i
       {
         name: "Single empty line test",
-        input: [`\n`, 1, 0],
+        input: [`\n`, 0, 1],
         expect: ``,
       },
       {
@@ -77,7 +76,7 @@ tester.add(
       },
       {
         name: "Single line test (no shift)",
-        input: [`abc\n`, 1, 0],
+        input: [`abc\n`, 0, 1],
         expect: ``,
       },
       {
@@ -87,45 +86,45 @@ tester.add(
       },
       {
         name: "Single line test (positive shift)",
-        input: [`abc\n`, 1, 3],
+        input: [`abc\n`, 3, 1],
         expect: `abc`,
       },
       {
         name: "Get line in the middle test",
-        input: [`abc\ndef\n`, 1, 7],
+        input: [`abc\ndef\n`, 7, 1],
         expect: `def`,
       },
       {
         name: "Get two lines from the end test",
-        input: [`abc\ndef\n`, 2, 7],
+        input: [`abc\ndef\n`, 7, 2],
         expect: `abc\ndef`,
       },
       {
         name: "Get zero lines test",
-        input: [`abc\ndef\n`, 0, 4],
+        input: [`abc\ndef\n`, 4, 0],
         expect: ``,
       },
     ],
-    func: (stream: string, n: number, i: number) => {
-      return new Cursor(stream).getLinesBeforeI(n, i);
+    testFunc: (stream: string, i: number, n: number) => {
+      return new Cursor(stream).getLinesBefore(i, n);
     },
   })
 );
 
 /**
  * ***************************
- * getLinesAfterI
+ * getLinesAfter
  * ***************************
  */
 
-tester.focus(
+tester.add(
   new Test({
     name: "getLinesAfterI",
     cases: [
       // input: stream, number of lines, i
       {
         name: "Single empty line test",
-        input: [`\n`, 1, 0],
+        input: [`\n`, 0, 1],
         expect: `\n`,
       },
       {
@@ -135,7 +134,7 @@ tester.focus(
       },
       {
         name: "Single line test (no shift)",
-        input: [`abc\n`, 1, 0],
+        input: [`abc\n`, 0, 1],
         expect: `abc\n`,
       },
       {
@@ -145,27 +144,25 @@ tester.focus(
       },
       {
         name: "Get line in the middle test",
-        input: [`abc\ndef\ng`, 1, 4],
+        input: [`abc\ndef\ng`, 4, 1],
         expect: `def\n`,
       },
       {
         name: "Get two lines from the the beginning test",
-        input: [`abc\ndef\ng`, 2, 1],
+        input: [`abc\ndef\ng`, 1, 2],
         expect: `bc\ndef\n`,
       },
       {
         name: "Get zero lines test",
-        input: [`abc\ndef\n`, 0, 4],
+        input: [`abc\ndef\n`, 4, 0],
         expect: ``,
       },
-
       {
         name: "Empty stream test",
-        input: [``, 1],
+        input: [``, 1, undefined],
         expectErr: Errors.Generic.IndexOutOfBounds,
-        focus: true,
+        // focus: true,
       },
-
       // {
       //   name: "Positive out of bound test",
       //   input: [` `, 1],
@@ -177,9 +174,9 @@ tester.focus(
       //   expectErr: Errors.Generic.IndexOutOfBounds,
       // },
     ],
-    func: (stream: string, n: number, i: number) => {
+    testFunc: (stream: string, i: number, n: number) => {
       // throw 11;
-      return new Cursor(stream).getLinesAfterI(n, i);
+      return new Cursor(stream).getLinesAfter(i, n);
     },
   })
 );
