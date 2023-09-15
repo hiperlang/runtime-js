@@ -198,7 +198,15 @@ class Compiler {
 export class Cursor {
   constructor(public stream: string, public i: number = 0) {}
 
-  updateI(i: number) {
+  commonAsserts(i: number) {
+    // i must be within stream boundaries
+    assert(
+      i >= 0 && i < this.stream.length,
+      Errors.Generic.IndexOutOfBounds(this.i, this.stream.length)
+    );
+  }
+
+  update(i: number) {
     this.i = i;
     return this;
   }
@@ -215,22 +223,14 @@ export class Cursor {
     return this.stream.slice(0, this.i);
   }
 
-  commonAsserts(i: number) {
-    // i must be within stream boundaries
-    assert(
-      i >= 0 && i < this.stream.length,
-      Errors.Generic.IndexOutOfBounds(this.i, this.stream.length)
-    );
-  }
-
-  getLineAroundI(i: number = this.i): [string, number] {
-    this.updateI(i);
-    const partBefore = this.getLinesBeforeI();
-    const partAfter = this.getLinesAfterI();
+  getLineAround(i: number = this.i): [string, number] {
+    this.update(i);
+    const partBefore = this.getLinesBefore();
+    const partAfter = this.getLinesAfter();
     return [partBefore + partAfter, partBefore.length];
   }
 
-  getLinesBeforeI(n: number = 1, i: number = this.i): string {
+  getLinesBefore(i: number = this.i, n: number = 1): string {
     if (n == 0) return "";
 
     this.commonAsserts(i);
@@ -254,7 +254,7 @@ export class Cursor {
     return this.stream.slice(ib, i);
   }
 
-  getLinesAfterI(n: number = 1, i: number = this.i): string {
+  getLinesAfter(i: number = this.i, n: number = 1): string {
     if (n == 0) return "";
 
     this.commonAsserts(i);
@@ -288,7 +288,7 @@ export class Cursor {
     }
   }
 
-  getPrettyCharAtI() {
+  getPrettyCharAt() {
     if (this.i == this.stream.length) return "EOF";
     return this.getNonPrintCharName(this.getCharAtI());
   }
@@ -300,7 +300,7 @@ export class Cursor {
  * ***************************
  */
 
-class Liner {
+class Printer {
   buffer: string = "";
   level: number = 0; // current tab level
   constructor(public tabSize: number = 2, public tabChar: string = ` `) {}
@@ -379,6 +379,16 @@ function execFn(fn: Function) {
   return fn.call(null, args);
 }
 
+function isIterable(input: any) {
+  try {
+    for (const _ of input) {
+    }
+    return true;
+  } catch (e) {
+    return false;
+  }
+}
+
 /**
  * ***************************
  * Errors
@@ -454,30 +464,25 @@ export const Errors = {
  * ***************************
  */
 
+type TestEqualFunc = (expected: any, result: any) => boolean;
+type TestFunc = (...input: any) => any;
 type TestData = {
-  name: string;
-  // TODO: add options
-  cases: (
-    | {
-        name?: string;
-        input: any;
-        expect: any;
-        details?: boolean;
-        focus?: boolean;
-        skip?: boolean;
-      }
-    | {
-        name?: string;
-        input: any;
-        expectErr: any;
-        details?: boolean;
-        focus?: boolean;
-        skip?: boolean;
-      }
-  )[];
-  func: (...input: any) => any;
-  equalFunc?: (expected: any, result: any) => boolean;
-  errEqualFunc?: (expectedErr: any, resultErr: any) => boolean;
+  name?: string;
+  cases: {
+    name?: string;
+    input: any[];
+    expect?: any;
+    expectErr?: any;
+    details?: boolean;
+    focus?: boolean;
+    skip?: boolean;
+    equalFunc?: TestEqualFunc;
+    errEqualFunc?: TestEqualFunc;
+  }[];
+  testFunc: TestFunc;
+  options?: TestStatsOptions;
+  equalFunc?: TestEqualFunc;
+  errEqualFunc?: TestEqualFunc;
 };
 
 type TestStatsOptions = {
@@ -487,35 +492,42 @@ type TestStatsOptions = {
   showCaseDetailsAnyway?: boolean;
 };
 
-export let TEST_STATS_OPTIONS: TestStatsOptions = {
-  showSummaryIfFailed: false,
-  showCaseListIfFailed: true,
-  showCaseDetailsIfFailed: true,
-  showCaseDetailsAnyway: false,
-};
-
 export class Test {
   data: TestData;
   testsResults = new Map<number, any>();
-  testsFailed = new Map<number, number>();
+  testsFailed = new Map<number, { code: number; message: any }>();
+  static statsOptions: TestStatsOptions = {
+    showSummaryIfFailed: false,
+    showCaseListIfFailed: true,
+    showCaseDetailsIfFailed: true,
+    showCaseDetailsAnyway: false,
+  };
 
   constructor({
     name,
     cases,
-    func,
+    testFunc,
+    options = Test.statsOptions,
     equalFunc = Test.isEqual,
     errEqualFunc = Test.errIsEqual,
   }: TestData) {
+    if (name === undefined) {
+      name = `${testFunc.name}`;
+    }
     this.data = {
       name,
       cases,
-      func,
+      options,
+      testFunc,
       equalFunc,
       errEqualFunc,
     };
   }
 
   run(options: TestStatsOptions = {}) {
+    if (this.data.options) {
+      options = Test.overrideOptions(this.data.options, options);
+    }
     this.execute();
     const stats = this.getStatsString(options);
     console.log(stats);
@@ -524,48 +536,99 @@ export class Test {
   execute() {
     const test = this.data; // shorthand
 
-    // if at least one test case has "focus" field set
+    // If test cases are missing, no reason to continue
+    if (test.cases.length == 0) return;
+
+    // If at least one test case has `focus` field set
     if (test.cases.some((testCase) => "focus" in testCase)) {
       // filter out those who doesn't
       test.cases = test.cases.filter((testCase) => testCase.focus == true);
     }
 
     test.cases.forEach((testCase, testIndex) => {
-      if (testCase.skip) return;
+      // Exclude from processing if test case has `skip` set
+      if (testCase.skip) {
+        return;
+      }
 
-      // there are 4 reasons for a test case to fail:
+      // Get per-case equalFunc if available
+      const equalFunc = testCase.equalFunc
+        ? testCase.equalFunc
+        : test.equalFunc;
+
+      // Start testing...
+      // There are several reasons for a test case to fail:
+
+      // (x) An ill-formed test case
+      if (!("expect" in testCase || "expectErr" in testCase)) {
+        this.testsFailed.set(
+          testIndex,
+          Test.failReason.MissingExpectedResultField
+        );
+        this.testsResults.set(testIndex, undefined);
+        return;
+      }
+
+      // (x) The provided input doesn't match testFunc signature
+      if (testCase.input.length !== test.testFunc.length) {
+        this.testsFailed.set(
+          testIndex,
+          Test.failReason.InputDoesNotMatchFuncSignature(
+            testCase.input.length,
+            test.testFunc.length
+          )
+        );
+        this.testsResults.set(testIndex, undefined);
+        return;
+      }
+
+      // Or
       try {
-        // In case the testing function succeeded
-        const result = test.func(...testCase.input);
+        // The testing function succeeded
+        const result = test.testFunc(...testCase.input);
         this.testsResults.set(testIndex, result);
 
         if ("expectErr" in testCase) {
-          // (1) But an error was expected
-          this.testsFailed.set(testIndex, 1);
+          // (x) But an error was expected
+          this.testsFailed.set(
+            testIndex,
+            Test.failReason.ExpectedErrorButFuncSucceeded
+          );
         } else {
-          // (2) Or the result doesn't match the expected one
-          if (!test.equalFunc!(testCase.expect, result)) {
-            this.testsFailed.set(testIndex, 0);
+          try {
+            // (x) Or the result doesn't match the expected one
+            if (!equalFunc!(testCase.expect, result)) {
+              this.testsFailed.set(
+                testIndex,
+                Test.failReason.ExpectedResultDoesNotMatch
+              );
+            }
+          } catch (err) {
+            // (x) Or there is an internal error in matching behavior
+            this.testsFailed.set(testIndex, Test.failReason.EqualFuncFailed);
+            this.testsResults.set(testIndex, undefined);
           }
         }
       } catch (resultErr) {
-        // In case the testing function threw an error
+        // The testing function threw an error
         this.testsResults.set(testIndex, resultErr);
 
         if ("expect" in testCase) {
-          // (3) But it was expected to succeed
-          this.testsFailed.set(testIndex, 3);
+          // (x) But the function was expected to succeed
+          this.testsFailed.set(testIndex, Test.failReason.FuncFailedWithError);
         } else {
           try {
-            // (4) Or the resulting error doesn't match the expected one
+            // (x) Or the resulting error doesn't match the expected one
             if (!test.errEqualFunc!(testCase.expectErr, resultErr)) {
-              this.testsFailed.set(testIndex, 2);
+              this.testsFailed.set(
+                testIndex,
+                Test.failReason.ExpectedErrorDoesNotMatch
+              );
             }
           } catch (err) {
-            // (4) Or there is an internal error in matching behavior
-            // (considered the 4th type)
-            this.testsResults.set(testIndex, err);
-            this.testsFailed.set(testIndex, 2);
+            // (x) Or there is an internal error in matching behavior
+            this.testsFailed.set(testIndex, Test.failReason.ErrEqualFuncFailed);
+            this.testsResults.set(testIndex, undefined);
           }
         }
       }
@@ -574,12 +637,13 @@ export class Test {
   }
 
   getStatsString(options: TestStatsOptions = {}): string {
-    options = Test.overrideDefaultOptions(options);
+    options = Test.overrideOptions(Test.statsOptions, options);
 
     const test = this.data; // shorthand
+    const testName = test.name;
     const totalCases = this.testsResults.size;
     const failedCases = this.testsFailed.size;
-    const testFailed = this.testsFailed.size > 0;
+    const testFailed = this.testsFailed.size > 0 || totalCases == 0;
     const passedCases = totalCases - failedCases;
     const coverage =
       totalCases == 0
@@ -587,13 +651,13 @@ export class Test {
         : (((totalCases - failedCases) / totalCases) * 100).toFixed(2);
 
     // Initialize output buffer
-    let out = new Liner(3, ` `);
+    let out = new Printer(3, ` `);
 
     // Show test status icon
     out.add(testFailed ? `🔴 ` : `🟢 `);
 
     // Show test name
-    out.add(test.name + ` `);
+    out.add(testName + ` `);
 
     // Show test short stats
     out.add(`(${passedCases}/${totalCases} passed; ${coverage}%)`);
@@ -627,7 +691,7 @@ export class Test {
     for (const [testIndex, testResult] of this.testsResults) {
       const testCase = this.data.cases[testIndex];
       const caseFailed = this.testsFailed.has(testIndex);
-      const failCode = this.testsFailed.get(testIndex);
+      const failReason = this.testsFailed.get(testIndex);
 
       out.addTab();
 
@@ -653,27 +717,25 @@ export class Test {
         // out.tab(); // start case details list
         out.line(`----`);
 
-        // Show case fail reason (if failed)
-        if (caseFailed)
-          out.line(`reason:      ${Test.getFailCodeString(failCode!)}`);
+        // Show case fail reason
+        if (caseFailed) {
+          out.line(`reason:      ${failReason!.message}`);
+          // Do not proceed if the test case is not well-formed
+          if (
+            failReason!.code == Test.failReason.MissingExpectedResultField.code
+          )
+            return out.buffer;
+        }
 
         // Show function input (regardless)
         out.line(`input:       ${Test.getDataString(testCase.input)}`);
 
-        // Show what function was expected to return (regardless)
+        // Show function's expected and obtained result
         if ("expectErr" in testCase) {
           out.line(`expectedErr: ${Test.getDataString(testCase.expectErr)}`);
+          out.line(`resultErr:   ${Test.getDataString(testResult)}`);
         } else {
           out.line(`expected:    ${Test.getDataString(testCase.expect)}`);
-        }
-
-        // Show what function threw (if failed)
-        if (caseFailed && (failCode == 2 || failCode == 3)) {
-          out.line(`resultErr:   ${Test.getDataString(testResult)}`);
-        }
-
-        // Show what function returned (regardless)
-        else {
           out.line(`result:      ${Test.getDataString(testResult)}`);
         }
 
@@ -693,36 +755,64 @@ export class Test {
     return out.buffer;
   }
 
-  static overrideDefaultOptions(user: TestStatsOptions) {
-    return { ...TEST_STATS_OPTIONS, ...user };
+  static overrideOptions(
+    oldOptions: TestStatsOptions,
+    newOptions: TestStatsOptions
+  ) {
+    return { ...oldOptions, ...newOptions };
   }
 
-  static getFailCodeString(code: number): string {
-    switch (code) {
-      case 0:
-        return `Function result does not match the expected result.`;
-      case 1:
-        return `Expected an error, but the function succeeded.`;
-      case 2:
-        return `Function error does not match the expected error.`;
-      case 3:
-        return `Expected a normal result, but the function threw an error.`;
-      default:
-        return `Unknown error code: ${code}.`;
-    }
-  }
+  static failReason = {
+    ExpectedResultDoesNotMatch: {
+      code: 0,
+      message: `Function result does not match the expected result.`,
+    },
+    ExpectedErrorButFuncSucceeded: {
+      code: 1,
+      message: `Expected an error, but the function succeeded.`,
+    },
+    ExpectedErrorDoesNotMatch: {
+      code: 2,
+      message: `Function error does not match the expected error.`,
+    },
+    FuncFailedWithError: {
+      code: 3,
+      message: `Expected a normal result, but the function threw an error.`,
+    },
+    MissingExpectedResultField: {
+      code: 4,
+      message: `Ill-formed test case. Please provide an \`expect\` or \`expectErr\` field.`,
+    },
+    EqualFuncFailed: {
+      code: 5,
+      message: (err: any) =>
+        `The provided function for comparing expected and obtained results (\`equalFunc\`) failed with the following error: \`${err}\`.`,
+    },
+    ErrEqualFuncFailed: {
+      code: 6,
+      message: (err: any) =>
+        `The provided function for comparing expected and obtained errors (\`errEqualFunc\`) failed with the following error: \`${err}\`.`,
+    },
+    InputDoesNotMatchFuncSignature: (a: number, b: number) => ({
+      code: 7,
+      message: `The number of arguments in the input does not match the expected signature of \`testFunc\`: ${a} provided, but ${b} expected.`,
+    }),
+  };
 
-  static getDataString(error: any): string {
-    // if a function
-    if (typeof error === "function") {
-      return `[function] ${Test.flattenString(error.toString())}`;
+  static getDataString(unknown: any): string {
+    if (typeof unknown === "function") {
+      return `[function] ${Test.flattenString(unknown.toString())}`;
     }
 
-    if (error instanceof Error) {
-      return `[${error.name}] "${Test.flattenString(error.message)}"`;
+    if (unknown instanceof Error) {
+      return `[${unknown.name}] "${Test.flattenString(unknown.message)}"`;
     }
 
-    return `[${typeof error}] ${JSON.stringify(error)}`;
+    if (typeof unknown == "undefined") {
+      return `[undefined]`;
+    }
+
+    return `[${typeof unknown}] ${JSON.stringify(unknown)}`;
   }
 
   static errIsEqual(expectedErr: any, resultErr: any): boolean {
