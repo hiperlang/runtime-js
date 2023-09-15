@@ -508,8 +508,8 @@ export class Test {
     cases,
     testFunc,
     options = Test.statsOptions,
-    equalFunc = Test.isEqual,
-    errEqualFunc = Test.errIsEqual,
+    equalFunc = Test.equalFunc,
+    errEqualFunc = Test.errEqualFunc,
   }: TestData) {
     if (name === undefined) {
       name = `${testFunc.name}`;
@@ -627,7 +627,10 @@ export class Test {
             }
           } catch (err) {
             // (x) Or there is an internal error in matching behavior
-            this.testsFailed.set(testIndex, Test.failReason.ErrEqualFuncFailed);
+            this.testsFailed.set(
+              testIndex,
+              Test.failReason.ErrEqualFuncFailed(err)
+            );
             this.testsResults.set(testIndex, undefined);
           }
         }
@@ -788,11 +791,12 @@ export class Test {
       message: (err: any) =>
         `The provided function for comparing expected and obtained results (\`equalFunc\`) failed with the following error: \`${err}\`.`,
     },
-    ErrEqualFuncFailed: {
+    ErrEqualFuncFailed: (err: any) => ({
       code: 6,
-      message: (err: any) =>
-        `The provided function for comparing expected and obtained errors (\`errEqualFunc\`) failed with the following error: \`${err}\`.`,
-    },
+      message: `The 'errEqualFunc' function for comparing expected and obtained errors failed with the following error: \`${JSON.stringify(
+        err
+      )}\`.`,
+    }),
     InputDoesNotMatchFuncSignature: (a: number, b: number) => ({
       code: 7,
       message: `The number of arguments in the input does not match the expected signature of \`testFunc\`: ${a} provided, but ${b} expected.`,
@@ -815,25 +819,17 @@ export class Test {
     return `[${typeof unknown}] ${JSON.stringify(unknown)}`;
   }
 
-  static errIsEqual(expectedErr: any, resultErr: any): boolean {
+  static errEqualFunc(expectedErr: any, resultErr: any): boolean {
     // The default errors comparison is based on `code` or `name` fields
-    assert(
-      typeof expectedErr == "object" &&
-        typeof resultErr == "object" &&
-        (("code" in expectedErr && "code" in resultErr) ||
-          ("name" in expectedErr && "name" in resultErr)),
-      Errors.Tests.ErrEqualFunctionBadArgs()
-    );
-    // return false;
-    // given the assert above, we can simplify conditions
-    if ("code" in expectedErr) {
-      return Test.isEqual(expectedErr.code, resultErr.code);
-    } else {
-      return Test.isEqual(expectedErr.name, resultErr.name);
+    if ("code" in expectedErr && "code" in resultErr) {
+      return Test.equalFunc(expectedErr.code, resultErr.code);
+    } else if ("name" in expectedErr && "name" in resultErr) {
+      return Test.equalFunc(expectedErr.name, resultErr.name);
     }
+    return Test.equalFunc(expectedErr, resultErr);
   }
 
-  static isEqual(expected: any, result: any): boolean {
+  static equalFunc(expected: any, result: any): boolean {
     // try direct comparison
     if (expected === result) {
       return true;
@@ -843,7 +839,7 @@ export class Test {
     if (Array.isArray(expected) && Array.isArray(result)) {
       if (expected.length !== result.length) return false;
       for (let i = 0; i < expected.length; i++) {
-        if (!Test.isEqual(expected[i], result[i])) return false;
+        if (!Test.equalFunc(expected[i], result[i])) return false;
       }
       return true;
     }
