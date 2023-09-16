@@ -1,12 +1,13 @@
 import { Test, Tester as TestsRunner, Errors, Cursor } from "./runtime";
 
+const tester = new TestsRunner();
+
 /**
  * ***************************
  * getLineAround
  * ***************************
  */
 
-const tester = new TestsRunner();
 tester.add(
   new Test({
     name: "getLineAround",
@@ -63,7 +64,7 @@ tester.add(
   new Test({
     name: "getLinesBeforeI",
     cases: [
-      // input: stream, number of lines, i
+      // input: stream, i, number of lines
       {
         name: "Single empty line test",
         input: [`\n`, 0, 1],
@@ -119,9 +120,9 @@ tester.add(
 
 tester.add(
   new Test({
-    name: "getLinesAfterI",
+    name: "getLinesAfter",
     cases: [
-      // input: stream, number of lines, i
+      // input: stream, i, number of lines
       {
         name: "Single empty line test",
         input: [`\n`, 0, 1],
@@ -157,31 +158,29 @@ tester.add(
         input: [`abc\ndef\n`, 4, 0],
         expect: ``,
       },
+      // {
+      //   name: "Empty stream test",
+      //   input: [``, 0, 2],
+      //   expect: ``,
+      // },
       {
-        name: "Empty stream test",
-        input: [``, 1, undefined],
-        expectErr: Errors.Generic.IndexOutOfBounds,
-        // focus: true,
+        name: "Positive out of bound test",
+        input: [` `, 1, 1],
+        expectErr: Errors.Generic.IndexOutOfBounds(-1, -1),
       },
-      // {
-      //   name: "Positive out of bound test",
-      //   input: [` `, 1],
-      //   expectErr: Errors.Generic.IndexOutOfBounds,
-      // },
-      // {
-      //   name: "Negative out of bound test",
-      //   input: [` `, -1],
-      //   expectErr: Errors.Generic.IndexOutOfBounds,
-      // },
+      {
+        name: "Negative out of bound test",
+        input: [` `, -1, 1],
+        expectErr: Errors.Generic.IndexOutOfBounds(-1, -1),
+      },
     ],
     testFunc: (stream: string, i: number, n: number) => {
-      // throw 11;
       return new Cursor(stream).getLinesAfter(i, n);
     },
   })
 );
 
-tester.run();
+tester.run({ showCaseListAnyway: true });
 
 // TODO: test
 // const printer = new LinePrinter(4, ` `);
