@@ -23,7 +23,7 @@ const SELF_SCRIPT = document.currentScript;
  */
 document.addEventListener("DOMContentLoaded", () => {
   // If `skip` set, don't do anything
-  if (SELF_SCRIPT?.hasAttribute("skip")) return;
+  if (SELF_SCRIPT?.hasAttribute("skipped")) return;
 
   // Check if runtime loaded multiple times
   if (SELF_SCRIPT?.hasAttribute("src")) {
@@ -397,10 +397,6 @@ function isIterable(input: any) {
 
 type ErrorType = { code: Function; message: string };
 
-function createError(code: Function, message: string): ErrorType {
-  return { code, message };
-}
-
 // 1xxx for syntactic errors
 // 2xxx for semantic errors
 // 3xxx for type errors
@@ -408,48 +404,38 @@ function createError(code: Function, message: string): ErrorType {
 // 5xxx for command line errors
 export const Errors = {
   Runtime: {
-    LoadedMultipleTimes: (url: string) =>
-      createError(
-        Errors.Runtime.LoadedMultipleTimes,
-        `To prevent unexpected behavior, ensure Hyper runtime is loaded once. Consider using a single <script src="${url}"></script> in your project's file.`
-      ),
+    LoadedMultipleTimes: (url: string) => ({
+      code: Errors.Runtime.LoadedMultipleTimes,
+      message: `To prevent unexpected behavior, ensure Hyper runtime is loaded once. Consider using a single <script src="${url}"></script> in your project's file.`,
+    }),
 
-    LoadedScopeEmpty: () =>
-      createError(
-        Errors.Runtime.LoadedScopeEmpty,
-        `<script> loading hyper runtime has attribute \`scope\` set to "" (empty). It means no matching elements could be found to operate on. To temporarily disable the runtime, use \`skip\` instead.`
-      ),
+    LoadedScopeEmpty: () => ({
+      code: Errors.Runtime.LoadedScopeEmpty,
+      message: `<script> loading hyper runtime has attribute \`scope\` set to "" (empty). It means no matching elements could be found to operate on. To temporarily disable the runtime, use \`skip\` instead.`,
+    }),
 
-    LoadedScopeNotFound: (query: string) =>
-      createError(
-        Errors.Runtime.LoadedScopeNotFound,
-        `<script> loading hyper runtime has \`scope\` attribute set to "${query}", but no matching elements were found.`
-      ),
-  },
-
-  Tests: {
-    ErrEqualFunctionBadArgs: () =>
-      createError(
-        Errors.Tests.ErrEqualFunctionBadArgs,
-        "The standard error matching behavior expects errors in the `expectErr` property of the test cases and those thrown by the testing function to be objects with a `code` or `name` field. Otherwise, provide a custom error comparison function using the `errEqualFunc` property."
-      ),
+    LoadedScopeNotFound: (query: string) => ({
+      code: Errors.Runtime.LoadedScopeNotFound,
+      message: `<script> loading hyper runtime has \`scope\` attribute set to "${query}", but no matching elements were found.`,
+    }),
   },
 
   Generic: {
-    IndexOutOfBounds: (i: number, length: number) =>
-      createError(
-        Errors.Generic.IndexOutOfBounds,
-        `Index (${i}) is out of stream boundaries. ${
-          length === 0
-            ? `The stream is empty.`
-            : `For a stream of length ${length}, valid indices are within [0..${
-                length - 1
-              }].`
-        }`
-      ),
+    IndexOutOfBounds: (i: number, length: number) => ({
+      code: Errors.Generic.IndexOutOfBounds,
+      message: `Index (${i}) is out of stream boundaries. ${
+        length === 0
+          ? `The stream is empty.`
+          : `For a stream of length ${length}, valid indices are within [0..${
+              length - 1
+            }].`
+      }`,
+    }),
 
-    StreamIsEmpty: () =>
-      createError(Errors.Generic.StreamIsEmpty, `The stream is empty.`),
+    StreamIsEmpty: () => ({
+      code: Errors.Generic.StreamIsEmpty,
+      message: `The stream is empty.`,
+    }),
   },
 
   MockError: (msg: string) => ({
@@ -469,8 +455,8 @@ type TestFunc = (...input: any) => any;
 type TestData = {
   name?: string;
   cases: {
-    name?: string;
     input: any[];
+    name?: string;
     expect?: any;
     expectErr?: any;
     details?: boolean;
@@ -487,44 +473,66 @@ type TestData = {
 
 type TestStatsOptions = {
   showSummaryIfFailed?: boolean;
+  showSummaryAnyway?: boolean;
   showCaseListIfFailed?: boolean;
+  showCaseListAnyway?: boolean;
   showCaseDetailsIfFailed?: boolean;
   showCaseDetailsAnyway?: boolean;
 };
 
 export class Test {
   data: TestData;
-  testsResults = new Map<number, any>();
-  testsFailed = new Map<number, { code: number; message: any }>();
+  testsRes = new Map<
+    number,
+    {
+      status: string;
+      reason?: { code: number; message: any };
+      result?: any;
+      resultErr?: any;
+    }
+  >();
   static statsOptions: TestStatsOptions = {
     showSummaryIfFailed: false,
+    showSummaryAnyway: false,
     showCaseListIfFailed: true,
+    showCaseListAnyway: false,
     showCaseDetailsIfFailed: true,
     showCaseDetailsAnyway: false,
   };
 
-  constructor({
-    name,
-    cases,
-    testFunc,
-    options = Test.statsOptions,
-    equalFunc = Test.equalFunc,
-    errEqualFunc = Test.errEqualFunc,
-  }: TestData) {
-    if (name === undefined) {
-      name = `${testFunc.name}`;
+  constructor(test: TestData) {
+    // Set default stats options if nothing provided or override
+    test.options =
+      test.options === undefined
+        ? Test.statsOptions
+        : Test.overrideOptions(Test.statsOptions, test.options);
+
+    test.equalFunc =
+      test.equalFunc === undefined ? Test.equalFunc : test.equalFunc;
+
+    // Set default `errEqualFunc` if nothing provided
+    test.errEqualFunc =
+      test.errEqualFunc === undefined ? Test.errEqualFunc : test.errEqualFunc;
+
+    // Set a default test name if nothing provided
+    if (test.name === undefined) {
+      // Get function name from the `testFunc` if it is not an arrow one
+      test.name =
+        test.testFunc.name !== "testFunc" ? test.testFunc.name : "Unnamed test";
     }
+
     this.data = {
-      name,
-      cases,
-      options,
-      testFunc,
-      equalFunc,
-      errEqualFunc,
+      name: test.name,
+      cases: test.cases,
+      testFunc: test.testFunc,
+      options: test.options,
+      equalFunc: test.equalFunc,
+      errEqualFunc: test.errEqualFunc,
     };
   }
 
   run(options: TestStatsOptions = {}) {
+    // Override options given in Test({...}) by ones passed in this function
     if (this.data.options) {
       options = Test.overrideOptions(this.data.options, options);
     }
@@ -535,103 +543,126 @@ export class Test {
 
   execute() {
     const test = this.data; // shorthand
+    let equalFunc = test.equalFunc; // expect/result comparing function
 
+    // (preprocess step)
     // If test cases are missing, no reason to continue
     if (test.cases.length == 0) return;
 
+    // (preprocess step)
     // If at least one test case has `focus` field set
     if (test.cases.some((testCase) => "focus" in testCase)) {
       // filter out those who doesn't
       test.cases = test.cases.filter((testCase) => testCase.focus == true);
     }
 
+    // (start for each test case)
     test.cases.forEach((testCase, testIndex) => {
-      // Exclude from processing if test case has `skip` set
+      // Exclude from processing if a test case has `skip` set
       if (testCase.skip) {
+        this.testsRes.set(testIndex, { status: "skipped" });
         return;
       }
 
-      // Get per-case equalFunc if available
-      const equalFunc = testCase.equalFunc
-        ? testCase.equalFunc
-        : test.equalFunc;
+      // Get equalFunc from a field if available
+      if ("equalFunc" in testCase) {
+        equalFunc = testCase.equalFunc;
+      }
 
-      // Start testing...
-      // There are several reasons for a test case to fail:
+      // Now, there are several reasons for a test case to fail:
 
-      // (x) An ill-formed test case
-      if (!("expect" in testCase || "expectErr" in testCase)) {
-        this.testsFailed.set(
-          testIndex,
-          Test.failReason.MissingExpectedResultField
-        );
-        this.testsResults.set(testIndex, undefined);
+      // (x) Ill-formed test case
+      if (
+        !("expect" in testCase || "expectErr" in testCase) ||
+        ("expect" in testCase && "expectErr" in testCase)
+      ) {
+        this.testsRes.set(testIndex, {
+          status: "failed",
+          reason: Test.failReason.MissingExpectedOrExpectedErrField,
+        });
         return;
       }
 
-      // (x) The provided input doesn't match testFunc signature
+      // (x) Provided test input doesn't match the testFunc signature
       if (testCase.input.length !== test.testFunc.length) {
-        this.testsFailed.set(
-          testIndex,
-          Test.failReason.InputDoesNotMatchFuncSignature(
+        this.testsRes.set(testIndex, {
+          status: "failed",
+          reason: Test.failReason.InputDoesNotMatchFuncSignature(
             testCase.input.length,
             test.testFunc.length
-          )
-        );
-        this.testsResults.set(testIndex, undefined);
+          ),
+        });
         return;
       }
 
-      // Or
       try {
-        // The testing function succeeded
         const result = test.testFunc(...testCase.input);
-        this.testsResults.set(testIndex, result);
 
+        // (x) Testing function was expected to throw error
         if ("expectErr" in testCase) {
-          // (x) But an error was expected
-          this.testsFailed.set(
-            testIndex,
-            Test.failReason.ExpectedErrorButFuncSucceeded
-          );
+          this.testsRes.set(testIndex, {
+            status: "failed",
+            reason: Test.failReason.ExpectedErrorButFuncSucceeded,
+            result: result,
+          });
         } else {
           try {
-            // (x) Or the result doesn't match the expected one
+            // (x) Testing function result doesn't match the expected one
             if (!equalFunc!(testCase.expect, result)) {
-              this.testsFailed.set(
-                testIndex,
-                Test.failReason.ExpectedResultDoesNotMatch
-              );
+              this.testsRes.set(testIndex, {
+                status: "failed",
+                reason: Test.failReason.ExpectedResultDoesNotMatch,
+                result: result,
+              });
+            } else {
+              // (OK) Testing function result passed the matching test
+              this.testsRes.set(testIndex, {
+                status: "passed",
+                result: result,
+              });
             }
           } catch (err) {
-            // (x) Or there is an internal error in matching behavior
-            this.testsFailed.set(testIndex, Test.failReason.EqualFuncFailed);
-            this.testsResults.set(testIndex, undefined);
+            // (x) There was an internal error in matching behavior
+            this.testsRes.set(testIndex, {
+              status: "failed",
+              reason: Test.failReason.EqualFuncFailed(err),
+              resultErr: err,
+            });
           }
         }
       } catch (resultErr) {
-        // The testing function threw an error
-        this.testsResults.set(testIndex, resultErr);
-
+        // (x) Testing function was expected to succeed
         if ("expect" in testCase) {
-          // (x) But the function was expected to succeed
-          this.testsFailed.set(testIndex, Test.failReason.FuncFailedWithError);
+          this.testsRes.set(testIndex, {
+            status: "failed",
+            reason: Test.failReason.FuncFailedWithError,
+            resultErr: resultErr,
+          });
         } else {
           try {
-            // (x) Or the resulting error doesn't match the expected one
+            // (x) Testing function error doesn't match the expected one
             if (!test.errEqualFunc!(testCase.expectErr, resultErr)) {
-              this.testsFailed.set(
-                testIndex,
-                Test.failReason.ExpectedErrorDoesNotMatch
-              );
+              this.testsRes.set(testIndex, {
+                status: "failed",
+                reason: Test.failReason.ExpectedErrorDoesNotMatch,
+                resultErr: resultErr,
+              });
+            } else {
+              // (OK) Testing function error passed the matching test
+              this.testsRes.set(testIndex, {
+                status: "passed",
+                resultErr: resultErr,
+              });
             }
           } catch (err) {
-            // (x) Or there is an internal error in matching behavior
-            this.testsFailed.set(
-              testIndex,
-              Test.failReason.ErrEqualFuncFailed(err)
-            );
-            this.testsResults.set(testIndex, undefined);
+            console.log(err);
+
+            // (x) There was an internal error in matching behavior
+            this.testsRes.set(testIndex, {
+              status: "failed",
+              reason: Test.failReason.ErrEqualFuncFailed(err),
+              resultErr: resultErr,
+            });
           }
         }
       }
@@ -639,107 +670,174 @@ export class Test {
     return this;
   }
 
-  getStatsString(options: TestStatsOptions = {}): string {
-    options = Test.overrideOptions(Test.statsOptions, options);
+  countFailedCases() {
+    let count = 0;
+    for (const value of this.testsRes.values()) {
+      if (value.status === "failed") {
+        count++;
+      }
+    }
+    return count;
+  }
 
-    const test = this.data; // shorthand
+  countSkippedCases() {
+    let count = 0;
+    for (const value of this.testsRes.values()) {
+      if (value.status === "skipped") {
+        count++;
+      }
+    }
+    return count;
+  }
+
+  getStatsString(options: TestStatsOptions = {}): string {
+    // Override options given in Test({...}) by ones passed in this function
+    if (this.data.options) {
+      options = Test.overrideOptions(this.data.options, options);
+    }
+
+    // Shorthands
+    const test = this.data;
     const testName = test.name;
-    const totalCases = this.testsResults.size;
-    const failedCases = this.testsFailed.size;
-    const testFailed = this.testsFailed.size > 0 || totalCases == 0;
-    const passedCases = totalCases - failedCases;
-    const coverage =
-      totalCases == 0
-        ? 0
-        : (((totalCases - failedCases) / totalCases) * 100).toFixed(2);
+
+    // Test stats
+    const totalCases = this.testsRes.size;
+    const failedCases = this.countFailedCases();
+    const skippedCases = this.countSkippedCases();
+    const passedCases = totalCases - (failedCases + skippedCases);
+    const testCoverage =
+      totalCases == 0 ? 0 : ((passedCases / totalCases) * 100).toFixed(2);
+    const testFailed = failedCases > 0;
+    const testSkipped = skippedCases == totalCases;
+    const testEmpty = totalCases == 0;
 
     // Initialize output buffer
     let out = new Printer(3, ` `);
 
     // Show test status icon
-    out.add(testFailed ? `🔴 ` : `🟢 `);
+    // out.add(testFailed ? `🔴 ` : `🟢 `);
+    if (!testEmpty && testFailed) {
+      out.add(`🔴 `);
+    } else if (!testEmpty && testSkipped) {
+      out.add(`🟡 `);
+    } else {
+      out.add(`🟢 `);
+    }
 
     // Show test name
     out.add(testName + ` `);
 
     // Show test short stats
-    out.add(`(${passedCases}/${totalCases} passed; ${coverage}%)`);
+    out.add(`(${passedCases}/${totalCases} passed; ${testCoverage}%)`);
 
-    if (totalCases === 0) {
+    // No reason to proceed
+    if (testEmpty) {
       return out.buffer;
     }
 
+    // Otherwise
     out.newline();
+    out.tab();
 
-    out.tab(); // start the list of cases
-
-    // Show test summary
-    if (testFailed && options.showSummaryIfFailed) {
+    // Show a test summary (if failed or enabled)
+    if (
+      (testFailed && options.showSummaryIfFailed) ||
+      options.showSummaryAnyway
+    ) {
       out.line(`----`);
-      out.line(`total:  ${totalCases}`);
-      out.line(`passed: ${passedCases}`);
-      out.line(`failed: ${failedCases}`);
-      out.line(`covers: ${coverage}%`);
+      out.line(`total:   ${totalCases}`);
+      out.line(`passed:  ${passedCases}`);
+      out.line(`failed:  ${failedCases}`);
+      if (skippedCases > 0) {
+        out.line(`skipped: ${skippedCases}`);
+      }
+      out.line(`covers:  ${testCoverage}%`);
     }
 
-    // Show list of test cases
-    if (testFailed && !options.showCaseListIfFailed) {
-      return out.buffer;
+    // Begin listing test cases (if failed or enabled)
+    if (
+      !(
+        (testFailed && options.showCaseListIfFailed) ||
+        options.showCaseListAnyway ||
+        options.showCaseDetailsAnyway
+      )
+    ) {
+      return out.buffer; // Otherwise, stop here
     }
 
     out.line(`----`);
 
-    // For each test case result
+    // For each test case
     let testOrder = 1;
-    for (const [testIndex, testResult] of this.testsResults) {
-      const testCase = this.data.cases[testIndex];
-      const caseFailed = this.testsFailed.has(testIndex);
-      const failReason = this.testsFailed.get(testIndex);
+    for (const [caseIndex, caseResult] of this.testsRes) {
+      // Test case stats
+      const caseData = this.data.cases[caseIndex];
+      const caseName = `name` in caseData ? ` (${caseData.name})` : ``;
+      const caseStatus = caseResult.status;
+      const caseFailed = caseStatus === "failed";
+      const caseSkipped = caseStatus === "skipped";
 
       out.addTab();
 
       // Show case status icon
-      out.add(caseFailed ? `🔴 ` : `🟢 `);
+      if (caseFailed) {
+        out.add(`🔴 `);
+      } else if (caseSkipped) {
+        out.add(`🟡 `);
+      } else {
+        out.add(`🟢 `);
+      }
 
       // Show case ordinal number
       out.add(`${testOrder}/${totalCases} `);
 
       // Show case failed/passed status
-      out.add(caseFailed ? `failed` : `passed`);
+      if (caseFailed) {
+        out.add(`failed`);
+      } else if (caseSkipped) {
+        out.add(`skipped`);
+      } else {
+        out.add(`passed`);
+      }
 
       // Show case name (if available)
-      out.add(`name` in testCase ? `  (${testCase.name})` : ``);
+      out.add(caseName);
       out.newline();
 
-      // Show case details (if failed and display not suppressed)
+      // Show case details (if failed or allowed or forced)
       if (
         (caseFailed && options.showCaseDetailsIfFailed) ||
         options.showCaseDetailsAnyway ||
-        testCase.details
+        caseData.details
       ) {
         // out.tab(); // start case details list
         out.line(`----`);
 
-        // Show case fail reason
+        // Show test case fail reason
         if (caseFailed) {
-          out.line(`reason:      ${failReason!.message}`);
-          // Do not proceed if the test case is not well-formed
-          if (
-            failReason!.code == Test.failReason.MissingExpectedResultField.code
-          )
-            return out.buffer;
+          out.line(`reason:      ${caseResult.reason!.message}`);
         }
 
         // Show function input (regardless)
-        out.line(`input:       ${Test.getDataString(testCase.input)}`);
+        out.line(`input:       ${Test.getDataString(caseData.input)}`);
 
-        // Show function's expected and obtained result
-        if ("expectErr" in testCase) {
-          out.line(`expectedErr: ${Test.getDataString(testCase.expectErr)}`);
-          out.line(`resultErr:   ${Test.getDataString(testResult)}`);
-        } else {
-          out.line(`expected:    ${Test.getDataString(testCase.expect)}`);
-          out.line(`result:      ${Test.getDataString(testResult)}`);
+        // Show function's expected (error) result
+        if ("expectErr" in caseData) {
+          out.line(`expectedErr: ${Test.getDataString(caseData.expectErr)}`);
+        }
+        if ("expect" in caseData) {
+          out.line(`expected:    ${Test.getDataString(caseData.expect)}`);
+        }
+
+        // Show function's obtained (error) result (if not skipped)
+        if (!caseSkipped) {
+          if ("resultErr" in caseResult) {
+            out.line(
+              `resultErr:   ${Test.getDataString(caseResult.resultErr)}`
+            );
+          } else if ("result" in caseResult) {
+            out.line(`result:      ${Test.getDataString(caseResult.result)}`);
+          }
         }
 
         out.line(`----`);
@@ -782,18 +880,19 @@ export class Test {
       code: 3,
       message: `Expected a normal result, but the function threw an error.`,
     },
-    MissingExpectedResultField: {
+    MissingExpectedOrExpectedErrField: {
       code: 4,
-      message: `Ill-formed test case. Please provide an \`expect\` or \`expectErr\` field.`,
+      message: `Please provide an \`expect\` or \`expectErr\` field (but not both).`,
     },
-    EqualFuncFailed: {
+    EqualFuncFailed: (err: any) => ({
       code: 5,
-      message: (err: any) =>
-        `The provided function for comparing expected and obtained results (\`equalFunc\`) failed with the following error: \`${err}\`.`,
-    },
+      message: `Comparison of expected and obtained results (\`equalFunc\`) failed with the following error: \`${JSON.stringify(
+        err
+      )}\`.`,
+    }),
     ErrEqualFuncFailed: (err: any) => ({
       code: 6,
-      message: `The 'errEqualFunc' function for comparing expected and obtained errors failed with the following error: \`${JSON.stringify(
+      message: `Comparison of expected and obtained errors (\`errEqualFunc\`) failed with the following error: \`${JSON.stringify(
         err
       )}\`.`,
     }),
@@ -820,22 +919,38 @@ export class Test {
   }
 
   static errEqualFunc(expectedErr: any, resultErr: any): boolean {
-    // The default errors comparison is based on `code` or `name` fields
-    if ("code" in expectedErr && "code" in resultErr) {
-      return Test.equalFunc(expectedErr.code, resultErr.code);
-    } else if ("name" in expectedErr && "name" in resultErr) {
-      return Test.equalFunc(expectedErr.name, resultErr.name);
+    // Try default matching behavior
+    if (Test.equalFunc(expectedErr, resultErr)) {
+      return true;
     }
-    return Test.equalFunc(expectedErr, resultErr);
+
+    // Try matching behavior based on `code` or `name` field in
+    // error objects
+    if (
+      expectedErr !== null &&
+      resultErr !== null &&
+      typeof expectedErr === "object" &&
+      typeof resultErr === "object"
+    ) {
+      if ("code" in expectedErr && "code" in resultErr) {
+        return Test.equalFunc(expectedErr.code, resultErr.code);
+      } else if ("name" in expectedErr && "name" in resultErr) {
+        return Test.equalFunc(expectedErr.name, resultErr.name);
+      }
+    }
+
+    // Otherwise no luck: provide a custom error comparison function
+    // using the `errEqualFunc` property
+    return false;
   }
 
   static equalFunc(expected: any, result: any): boolean {
-    // try direct comparison
+    // Try direct comparison
     if (expected === result) {
       return true;
     }
 
-    // try recursive array comparison
+    // Try recursive array comparison
     if (Array.isArray(expected) && Array.isArray(result)) {
       if (expected.length !== result.length) return false;
       for (let i = 0; i < expected.length; i++) {
@@ -844,28 +959,28 @@ export class Test {
       return true;
     }
 
-    // try Function comparison
+    // Try Function comparison
     if (expected instanceof Function && result instanceof Function) {
       return expected === result;
     }
 
-    // try JSON serialization comparison
+    // Try JSON serialization comparison
     if (JSON.stringify(expected) === JSON.stringify(result)) {
       return true;
     }
 
-    // no luck
+    // No luck
     return false;
   }
 
   static flattenString(
     str: string,
     limit: number = 70,
-    endIfExceeds: string = `...`
+    endWith: string = `...`
   ): string {
     let result = str.toString().replace(/\n/g, "").replace(/\s+/g, " ");
     if (limit > 0 && result.length > limit) {
-      result = result.slice(0, limit - endIfExceeds.length) + endIfExceeds;
+      result = result.slice(0, limit - endWith.length) + endWith;
     }
     return result;
   }
