@@ -12,7 +12,7 @@
  */
 
 /**
- * Save currentScript as soon as possible to have an access to the runtime
+ * Save currentScript as soon as possible to have access to the runtime
  * loading <script> later on.
  */
 const SELF_SCRIPT = document.currentScript;
@@ -191,7 +191,7 @@ class Compiler {
 
 /**
  * ***************************
- * LineProcessor
+ * Cursor
  * ***************************
  */
 
@@ -296,7 +296,7 @@ export class Cursor {
 
 /**
  * ***************************
- * Liner
+ * Printer
  * ***************************
  */
 
