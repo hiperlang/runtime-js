@@ -252,11 +252,53 @@ export class Cursor {
   }
 
   linesBeforeArray(i: number = this.i, n: number = 1): string[] {
-    // i = -1 means start from the very end
-    if (i === -1) {
-      i = this.stream.length - 1;
+    if (n == 0 || this.stream.length == 0) return [];
+
+    // allow
+    if (i !== -1) {
+      this.assertWithinBoundaries(i);
+    } else {
+      i = this.stream.length;
     }
-    return [];
+
+    let lines: string[] = [];
+    const stream = this.stream; // shorthand
+
+    // Set n to consume all lines if -1 otherwise keep its original value
+    // (length of stream + 1 >= the number of possible lines)
+    n = n == -1 ? stream.length + 1 : n;
+
+    // Set line counter
+    let counter = 0;
+
+    // Set ib (before i) to track backward
+    let ib = i - 1;
+
+    // Consume n number of lines forward
+    while (true) {
+      if (stream[ib] == "\n") {
+        lines.push(stream.slice(ib + 1, i)); // '\n' itself stripped
+        i = ib; // Start again
+        counter++;
+      }
+      if (counter == n || ib < 0) break;
+      ib--;
+    }
+
+    // Add last line only if we still need it
+    if (counter < n) {
+      // If the beginning of the stream was a new line
+      if (stream[0] == "\n") {
+        lines.push(``); // Add an empty (first) line
+      } else {
+        // Otherwise add the line that ...
+        lines.push(stream.slice(ib + 1, i));
+      }
+    }
+
+    lines.reverse();
+
+    return lines;
   }
 
   linesAfterArray(i: number = this.i, n: number = 1): string[] {
