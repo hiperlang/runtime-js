@@ -466,7 +466,7 @@ type TestData = {
     equalFunc?: TestEqualFunc;
     errEqualFunc?: TestEqualFunc;
   }[];
-  testFunc: TestFunc;
+  func: TestFunc;
   options?: TestStatsOptions;
   equalFunc?: TestEqualFunc;
   errEqualFunc?: TestEqualFunc;
@@ -483,7 +483,7 @@ type TestStatsOptions = {
 
 export class Test {
   data: TestData;
-  testsRes = new Map<
+  testResults = new Map<
     number,
     {
       status: string;
@@ -508,6 +508,7 @@ export class Test {
         ? Test.statsOptions
         : Test.overrideOptions(Test.statsOptions, test.options);
 
+    // Set default `equalFunc` if nothing provided
     test.equalFunc =
       test.equalFunc === undefined ? Test.equalFunc : test.equalFunc;
 
@@ -517,15 +518,14 @@ export class Test {
 
     // Set a default test name if nothing provided
     if (test.name === undefined) {
-      // Get function name from the `testFunc` if it is not an arrow one
-      test.name =
-        test.testFunc.name !== "testFunc" ? test.testFunc.name : "Unnamed test";
+      // Get function name from the `func` if it is not an arrow one
+      test.name = test.func.name !== "func" ? test.func.name : "Unnamed test";
     }
 
     this.data = {
       name: test.name,
       cases: test.cases,
-      testFunc: test.testFunc,
+      func: test.func,
       options: test.options,
       equalFunc: test.equalFunc,
       errEqualFunc: test.errEqualFunc,
@@ -538,7 +538,7 @@ export class Test {
       options = Test.overrideOptions(this.data.options, options);
     }
     this.execute();
-    const stats = this.getStatsString(options);
+    const stats = this.genStatsString(options);
     console.log(stats);
   }
 
@@ -561,7 +561,7 @@ export class Test {
     test.cases.forEach((testCase, testIndex) => {
       // Exclude from processing if a test case has `skip` set
       if (testCase.skip) {
-        this.testsRes.set(testIndex, { status: "skipped" });
+        this.testResults.set(testIndex, { status: "skipped" });
         return;
       }
 
@@ -577,56 +577,56 @@ export class Test {
         !("expect" in testCase || "expectErr" in testCase) ||
         ("expect" in testCase && "expectErr" in testCase)
       ) {
-        this.testsRes.set(testIndex, {
+        this.testResults.set(testIndex, {
           status: "failed",
-          reason: Test.failReason.MissingExpectedOrExpectedErrField,
+          reason: Test.Error.MissingExpectedOrExpectedErrField,
         });
         return;
       }
 
-      // (x) Provided test input doesn't match the testFunc signature
-      if (testCase.input.length !== test.testFunc.length) {
-        this.testsRes.set(testIndex, {
+      // (x) Provided test input doesn't match the func signature
+      if (testCase.input.length !== test.func.length) {
+        this.testResults.set(testIndex, {
           status: "failed",
-          reason: Test.failReason.InputDoesNotMatchFuncSignature(
+          reason: Test.Error.InputDoesNotMatchFuncSignature(
             testCase.input.length,
-            test.testFunc.length
+            test.func.length
           ),
         });
         return;
       }
 
       try {
-        const result = test.testFunc(...testCase.input);
+        const result = test.func(...testCase.input);
 
         // (x) Testing function was expected to throw error
         if ("expectErr" in testCase) {
-          this.testsRes.set(testIndex, {
+          this.testResults.set(testIndex, {
             status: "failed",
-            reason: Test.failReason.ExpectedErrorButFuncSucceeded,
+            reason: Test.Error.ExpectedErrorButFuncSucceeded,
             result: result,
           });
         } else {
           try {
             // (x) Testing function result doesn't match the expected one
             if (!equalFunc!(testCase.expect, result)) {
-              this.testsRes.set(testIndex, {
+              this.testResults.set(testIndex, {
                 status: "failed",
-                reason: Test.failReason.ExpectedResultDoesNotMatch,
+                reason: Test.Error.ExpectedResultDoesNotMatch,
                 result: result,
               });
             } else {
               // (OK) Testing function result passed the matching test
-              this.testsRes.set(testIndex, {
+              this.testResults.set(testIndex, {
                 status: "passed",
                 result: result,
               });
             }
           } catch (err) {
             // (x) There was an internal error in matching behavior
-            this.testsRes.set(testIndex, {
+            this.testResults.set(testIndex, {
               status: "failed",
-              reason: Test.failReason.EqualFuncFailed(err),
+              reason: Test.Error.EqualFuncFailed(err),
               resultErr: err,
             });
           }
@@ -634,23 +634,23 @@ export class Test {
       } catch (resultErr) {
         // (x) Testing function was expected to succeed
         if ("expect" in testCase) {
-          this.testsRes.set(testIndex, {
+          this.testResults.set(testIndex, {
             status: "failed",
-            reason: Test.failReason.FuncFailedWithError,
+            reason: Test.Error.FuncFailedWithError,
             resultErr: resultErr,
           });
         } else {
           try {
             // (x) Testing function error doesn't match the expected one
             if (!test.errEqualFunc!(testCase.expectErr, resultErr)) {
-              this.testsRes.set(testIndex, {
+              this.testResults.set(testIndex, {
                 status: "failed",
-                reason: Test.failReason.ExpectedErrorDoesNotMatch,
+                reason: Test.Error.ExpectedErrorDoesNotMatch,
                 resultErr: resultErr,
               });
             } else {
               // (OK) Testing function error passed the matching test
-              this.testsRes.set(testIndex, {
+              this.testResults.set(testIndex, {
                 status: "passed",
                 resultErr: resultErr,
               });
@@ -659,9 +659,9 @@ export class Test {
             console.log(err);
 
             // (x) There was an internal error in matching behavior
-            this.testsRes.set(testIndex, {
+            this.testResults.set(testIndex, {
               status: "failed",
-              reason: Test.failReason.ErrEqualFuncFailed(err),
+              reason: Test.Error.ErrEqualFuncFailed(err),
               resultErr: resultErr,
             });
           }
@@ -673,7 +673,7 @@ export class Test {
 
   countFailedCases() {
     let count = 0;
-    for (const value of this.testsRes.values()) {
+    for (const value of this.testResults.values()) {
       if (value.status === "failed") {
         count++;
       }
@@ -683,7 +683,7 @@ export class Test {
 
   countSkippedCases() {
     let count = 0;
-    for (const value of this.testsRes.values()) {
+    for (const value of this.testResults.values()) {
       if (value.status === "skipped") {
         count++;
       }
@@ -691,7 +691,7 @@ export class Test {
     return count;
   }
 
-  getStatsString(options: TestStatsOptions = {}): string {
+  genStatsString(options: TestStatsOptions = {}): string {
     // Override options given in Test({...}) by ones passed in this function
     if (this.data.options) {
       options = Test.overrideOptions(this.data.options, options);
@@ -702,7 +702,7 @@ export class Test {
     const testName = test.name;
 
     // Test stats
-    const totalCases = this.testsRes.size;
+    const totalCases = this.testResults.size;
     const failedCases = this.countFailedCases();
     const skippedCases = this.countSkippedCases();
     const passedCases = totalCases - (failedCases + skippedCases);
@@ -745,7 +745,7 @@ export class Test {
       (testFailed && options.showSummaryIfFailed) ||
       options.showSummaryAnyway
     ) {
-      out.line(`----`);
+      out.line(`    `);
       out.line(`total:   ${totalCases}`);
       out.line(`passed:  ${passedCases}`);
       out.line(`failed:  ${failedCases}`);
@@ -766,11 +766,11 @@ export class Test {
       return out.buffer; // Otherwise, stop here
     }
 
-    out.line(`----`);
+    out.line(`    `);
 
     // For each test case
     let testOrder = 1;
-    for (const [caseIndex, caseResult] of this.testsRes) {
+    for (const [caseIndex, caseResult] of this.testResults) {
       // Test case stats
       const caseData = this.data.cases[caseIndex];
       const caseName = `name` in caseData ? ` (${caseData.name})` : ``;
@@ -812,7 +812,7 @@ export class Test {
         caseData.details
       ) {
         // out.tab(); // start case details list
-        out.line(`----`);
+        out.line(`    `);
 
         // Show test case fail reason
         if (caseFailed) {
@@ -841,15 +841,15 @@ export class Test {
           }
         }
 
-        out.line(`----`);
+        out.line(`    `);
         // out.untab(); // end case details list
       }
       testOrder++;
     }
 
     // add a trailing line if cases exist and listed
-    if (!out.buffer.endsWith(`----\n`)) {
-      out.line(`----`);
+    if (!out.buffer.endsWith(`    \n`)) {
+      out.line(`    `);
     }
 
     out.untab(); // end the list of cases
@@ -864,7 +864,7 @@ export class Test {
     return { ...oldOptions, ...newOptions };
   }
 
-  static failReason = {
+  static Error = {
     ExpectedResultDoesNotMatch: {
       code: 0,
       message: `Function result does not match the expected result.`,
@@ -899,7 +899,7 @@ export class Test {
     }),
     InputDoesNotMatchFuncSignature: (a: number, b: number) => ({
       code: 7,
-      message: `The number of arguments in the input does not match the expected signature of \`testFunc\`: ${a} provided, but ${b} expected.`,
+      message: `The number of arguments in the input does not match the expected signature of \`func\`: ${a} provided, but ${b} expected.`,
     }),
   };
 
