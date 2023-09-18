@@ -403,23 +403,6 @@ type ErrorType = { code: Function; message: string };
 // 4xxx for compiler options errors
 // 5xxx for command line errors
 export const Errors = {
-  Runtime: {
-    LoadedMultipleTimes: (url: string) => ({
-      code: Errors.Runtime.LoadedMultipleTimes,
-      message: `To prevent unexpected behavior, ensure Hyper runtime is loaded once. Consider using a single <script src="${url}"></script> in your project's file.`,
-    }),
-
-    LoadedScopeEmpty: () => ({
-      code: Errors.Runtime.LoadedScopeEmpty,
-      message: `<script> loading hyper runtime has attribute \`scope\` set to "" (empty). It means no matching elements could be found to operate on. To temporarily disable the runtime, use \`skip\` instead.`,
-    }),
-
-    LoadedScopeNotFound: (query: string) => ({
-      code: Errors.Runtime.LoadedScopeNotFound,
-      message: `<script> loading hyper runtime has \`scope\` attribute set to "${query}", but no matching elements were found.`,
-    }),
-  },
-
   Generic: {
     IndexOutOfBounds: (i: number, length: number) => ({
       code: Errors.Generic.IndexOutOfBounds,
