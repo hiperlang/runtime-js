@@ -47,9 +47,11 @@ document.addEventListener("DOMContentLoaded", () => {
     assert(targets.length > 0, Errors.Runtime.LoadedScopeNotFound(query!));
   }
 
-  // start runtime
+  // Start runtime if `defer` is not set
+  if (!SELF_SCRIPT?.hasAttribute("defer")) {
   const runtime = new Runtime(targets);
   runtime.runOnTargets();
+  }
 });
 
 /**
