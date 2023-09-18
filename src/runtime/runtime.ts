@@ -369,7 +369,7 @@ export class Cursor {
  * ***************************
  */
 
-class Printer {
+export class Printer {
   buffer: string = "";
   level: number = 0; // current tab level
   constructor(public tabSize: number = 2, public tabChar: string = ` `) {}
