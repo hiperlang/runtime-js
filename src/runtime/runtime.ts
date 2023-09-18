@@ -1045,26 +1045,27 @@ export class Test {
  */
 
 export class TestRunner {
+  // Map<test: skip?>
   tests: Map<Test, boolean> = new Map();
   testsOnFocus: Set<Test> = new Set();
 
   add(...tests: Test[]) {
-    tests.forEach((test) => {
-      this.tests.set(test, true);
-    });
-    return this;
-  }
-
-  skip(...tests: Test[]) {
     tests.forEach((test) => {
       this.tests.set(test, false);
     });
     return this;
   }
 
-  focus(...tests: Test[]) {
+  skip(...tests: Test[]) {
     tests.forEach((test) => {
       this.tests.set(test, true);
+    });
+    return this;
+  }
+
+  focus(...tests: Test[]) {
+    tests.forEach((test) => {
+      this.tests.set(test, false);
       this.testsOnFocus.add(test);
     });
     return this;
@@ -1077,7 +1078,7 @@ export class TestRunner {
   }
 
   run(options: TestStatsOptions = {}) {
-    if (this.tests.size == 0 || this.testsOnFocus.size == 0) return;
+    if (this.tests.size == 0) return;
 
     let stats = "";
     if (this.testsOnFocus.size > 0) {
@@ -1086,13 +1087,14 @@ export class TestRunner {
         stats += test.genStatsString(options);
       }
     } else {
+      console.log(this.tests);
+
       for (const [test, skip] of this.tests) {
         if (skip) return;
         test.execute();
         stats += test.genStatsString(options);
       }
     }
-    console.log(stats);
 
     return this;
   }
