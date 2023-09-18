@@ -464,7 +464,7 @@ function isIterable(input: any) {
  * ***************************
  */
 
-type ErrorType = { code: Function; message: string };
+type ErrorType = { code: number; message: string };
 
 // 1xxx for syntactic errors
 // 2xxx for semantic errors
@@ -474,7 +474,7 @@ type ErrorType = { code: Function; message: string };
 export const Errors = {
   Generic: {
     IndexOutOfBounds: (i: number, length: number) => ({
-      code: Errors.Generic.IndexOutOfBounds,
+      code: 1,
       message: `Index (${i}) is out of stream boundaries. ${
         length === 0
           ? `The stream is empty.`
@@ -485,13 +485,13 @@ export const Errors = {
     }),
 
     StreamIsEmpty: () => ({
-      code: Errors.Generic.StreamIsEmpty,
+      code: 2,
       message: `The stream is empty.`,
     }),
   },
 
-  MockError: (msg: string) => ({
-    code: Errors.MockError,
+  RemoveThisError: (msg: string) => ({
+    code: 99,
     message: msg,
   }),
 };
