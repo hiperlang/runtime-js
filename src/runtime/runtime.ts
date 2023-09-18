@@ -46,8 +46,8 @@ document.addEventListener("DOMContentLoaded", () => {
     assert(targets.length > 0, Runtime.Error.LoadedScopeNotFound(query!));
   }
 
-  // Start runtime if `defer` is not set
-  if (!SELF_SCRIPT?.hasAttribute("defer")) {
+  // Start runtime if `lazy` is not set
+  if (!SELF_SCRIPT?.hasAttribute("lazy")) {
   const runtime = new Runtime(targets);
   runtime.runOnTargets();
   }
