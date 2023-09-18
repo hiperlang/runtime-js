@@ -72,6 +72,23 @@ class Runtime {
   constructor(targets: Element[]) {
     this.targets = targets;
   }
+
+  static Error = {
+    LoadedMultipleTimes: (url: string) => ({
+      code: 1,
+      message: `To prevent unexpected behavior, ensure Hyper runtime is loaded once. Consider using a single <script src="${url}"></script> in your project's file.`,
+    }),
+
+    LoadedScopeEmpty: () => ({
+      code: 2,
+      message: `<script> loading hyper runtime has attribute \`scope\` set to "" (empty). It means no matching elements could be found to operate on. To temporarily disable the runtime, use \`skip\` instead.`,
+    }),
+
+    LoadedScopeNotFound: (query: string) => ({
+      code: 3,
+      message: `<script> loading hyper runtime has \`scope\` attribute set to "${query}", but no matching elements were found.`,
+    }),
+  };
 }
 
 /**
