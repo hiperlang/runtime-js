@@ -1,13 +1,12 @@
-import { Test, Tester as TestsRunner, Errors, Cursor } from "./runtime";
+import { Test, Compiler, Printer, TestRunner, Errors, Cursor } from "./runtime";
 
-const tester = new TestsRunner();
+const tester = new TestRunner();
 
 /**
  * ***************************
- * getLineAround
+ * lineAround
  * ***************************
  */
-
 tester.add(
   new Test({
     name: "getLineAround",
@@ -48,18 +47,17 @@ tester.add(
         expect: [`def\n`, 0],
       },
     ],
-    testFunc: (stream: string, i: number) => {
-      return new Cursor(stream).getLineAround(i);
+    func: (stream: string, i: number) => {
+      return new Cursor(stream).lineAroundString(i);
     },
   })
 );
 
 /**
  * ***************************
- * getLinesBefore
+ * linesBefore
  * ***************************
  */
-
 tester.add(
   new Test({
     name: "getLinesBeforeI",
@@ -106,18 +104,79 @@ tester.add(
         expect: ``,
       },
     ],
-    testFunc: (stream: string, i: number, n: number) => {
-      return new Cursor(stream).getLinesBefore(i, n);
+    func: (stream: string, i: number, n: number) => {
+      return new Cursor(stream).linesBeforeString(i, n);
     },
   })
 );
 
 /**
  * ***************************
- * getLinesAfter
+ * linesAfterArray
  * ***************************
  */
+tester.focus(
+  new Test({
+    name: "linesAfterArray",
+    cases: [
+      // stream, i, n
+      {
+        name: "Empty line test",
+        input: [``, 0, 2],
+        expect: [],
+      },
+      {
+        name: "Single empty space test",
+        input: [` `, 0, 2],
+        expect: [` `],
+      },
+      {
+        name: "Single new line test",
+        input: [`\n`, 0, 2],
+        expect: [``, ``],
+      },
+      {
+        name: "Single line w/o new line test",
+        input: [`123`, 0, 2],
+        expect: [`123`],
+      },
+      {
+        name: "Three normal lines test",
+        input: [`1\n2\n3`, 0, 3],
+        expect: [`1`, `2`, `3`],
+      },
+      {
+        name: "Three normal lines test (limit to 2)",
+        input: [`1\n2\n3`, 0, 2],
+        expect: [`1`, `2`],
+      },
+      {
+        name: "Three normal lines test (limit to 0)",
+        input: [`1\n2\n3`, 0, 0],
+        expect: [],
+      },
+      {
+        name: "Three normal lines test (no limit; -1)",
+        input: [`1\n2\n3`, 0, -1],
+        expect: [`1`, `2`, `3`],
+      },
+      {
+        name: "End of stream test",
+        input: [`1\n2\n3`, 4, -1],
+        expect: [`3`],
+      },
+    ],
+    func: (stream, i, n) => {
+      return new Cursor(stream).linesAfterArray(i, n);
+    },
+  })
+);
 
+/**
+ * ***************************
+ * linesAfter
+ * ***************************
+ */
 tester.add(
   new Test({
     name: "getLinesAfter",
@@ -158,24 +217,67 @@ tester.add(
         input: [`abc\ndef\n`, 4, 0],
         expect: ``,
       },
-      // {
-      //   name: "Empty stream test",
-      //   input: [``, 0, 2],
-      //   expect: ``,
-      // },
       {
-        name: "Positive out of bound test",
+        name: "Empty stream test",
+        input: [``, 0, 2],
+        expect: ``,
+      },
+      {
+        name: "Positive out of bounds test",
         input: [` `, 1, 1],
         expectErr: Errors.Generic.IndexOutOfBounds(-1, -1),
       },
       {
-        name: "Negative out of bound test",
+        name: "Negative out of bounds test",
         input: [` `, -1, 1],
         expectErr: Errors.Generic.IndexOutOfBounds(-1, -1),
       },
     ],
-    testFunc: (stream: string, i: number, n: number) => {
-      return new Cursor(stream).getLinesAfter(i, n);
+    func: (stream: string, i: number, n: number) => {
+      return new Cursor(stream).linesAfterString(i, n);
+    },
+  })
+);
+
+/**
+ * ***************************
+ * Line printer
+ * ***************************
+ */
+tester.add(
+  new Test({
+    name: `Line printer`,
+    cases: [
+      {
+        input: [],
+        expect: `
+line0
+line1
+++++line2
+line3
+++++++++line4
+line4
+`,
+      },
+    ],
+    func: () => {
+      const printer = new Printer(4, `+`);
+      printer.newline();
+      printer.add("line");
+      printer.add("0");
+      printer.newline();
+      printer.line("line1");
+      printer.tab();
+      printer.line("line2");
+      printer.add("line3");
+      printer.newline();
+      printer.addTab(2);
+      printer.add("line4");
+      printer.newline();
+      printer.untab();
+      printer.untab();
+      printer.line("line4");
+      return printer.buffer;
     },
   })
 );
