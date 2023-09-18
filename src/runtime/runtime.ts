@@ -22,8 +22,8 @@ const SELF_SCRIPT = document.currentScript;
  * target separately.
  */
 document.addEventListener("DOMContentLoaded", () => {
-  // If `skip` set, don't do anything
-  if (SELF_SCRIPT?.hasAttribute("skipped")) return;
+  // Don't do anything if `skip` is set
+  if (SELF_SCRIPT?.hasAttribute("skip")) return;
 
   // Check if runtime loaded multiple times
   if (SELF_SCRIPT?.hasAttribute("src")) {
@@ -32,19 +32,18 @@ document.addEventListener("DOMContentLoaded", () => {
     Array.from(document.getElementsByTagName("script")).forEach((script) => {
       if (script.getAttribute("src") === url!) counter++;
     });
-    assert(counter == 1, Errors.Runtime.LoadedMultipleTimes(url!));
+    assert(counter == 1, Runtime.Error.LoadedMultipleTimes(url!));
   }
 
-  // Set default target
+  // Set the default target for Hyper to operate on
   let targets = [document.body];
 
-  // However
+  // Override default target if `scope` is set
   if (SELF_SCRIPT?.hasAttribute("scope")) {
     const query = SELF_SCRIPT.getAttribute("scope");
-    assert(query != "", Errors.Runtime.LoadedScopeEmpty());
-    // override defaults
+    assert(query != "", Runtime.Error.LoadedScopeEmpty());
     targets = Array.from(document.querySelectorAll(query!));
-    assert(targets.length > 0, Errors.Runtime.LoadedScopeNotFound(query!));
+    assert(targets.length > 0, Runtime.Error.LoadedScopeNotFound(query!));
   }
 
   // Start runtime if `defer` is not set
