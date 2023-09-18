@@ -48,7 +48,7 @@ tester.add(
       },
     ],
     func: (stream: string, i: number) => {
-      return new Cursor(stream).lineAroundString(i);
+      return new Cursor(stream).lineAround(i);
     },
   })
 );
@@ -105,69 +105,7 @@ tester.add(
       },
     ],
     func: (stream: string, i: number, n: number) => {
-      return new Cursor(stream).linesBeforeString(i, n);
-    },
-  })
-);
-
-/**
- * ***************************
- * linesAfterArray
- * ***************************
- */
-tester.focus(
-  new Test({
-    name: "linesAfterArray",
-    cases: [
-      // stream, i, n
-      {
-        name: "Empty line test",
-        input: [``, 0, 2],
-        expect: [],
-      },
-      {
-        name: "Single empty space test",
-        input: [` `, 0, 2],
-        expect: [` `],
-      },
-      {
-        name: "Single new line test",
-        input: [`\n`, 0, 2],
-        expect: [``, ``],
-      },
-      {
-        name: "Single line w/o new line test",
-        input: [`123`, 0, 2],
-        expect: [`123`],
-      },
-      {
-        name: "Three normal lines test",
-        input: [`1\n2\n3`, 0, 3],
-        expect: [`1`, `2`, `3`],
-      },
-      {
-        name: "Three normal lines test (limit to 2)",
-        input: [`1\n2\n3`, 0, 2],
-        expect: [`1`, `2`],
-      },
-      {
-        name: "Three normal lines test (limit to 0)",
-        input: [`1\n2\n3`, 0, 0],
-        expect: [],
-      },
-      {
-        name: "Three normal lines test (no limit; -1)",
-        input: [`1\n2\n3`, 0, -1],
-        expect: [`1`, `2`, `3`],
-      },
-      {
-        name: "End of stream test",
-        input: [`1\n2\n3`, 4, -1],
-        expect: [`3`],
-      },
-    ],
-    func: (stream, i, n) => {
-      return new Cursor(stream).linesAfterArray(i, n);
+      return new Cursor(stream).linesBefore(i, n);
     },
   })
 );
@@ -234,7 +172,131 @@ tester.add(
       },
     ],
     func: (stream: string, i: number, n: number) => {
-      return new Cursor(stream).linesAfterString(i, n);
+      return new Cursor(stream).linesAfter(i, n);
+    },
+  })
+);
+
+/**
+ * ***************************
+ * linesAfterArray
+ * ***************************
+ */
+tester.add(
+  new Test({
+    name: "linesAfterArray",
+    cases: [
+      // stream, i, n
+      {
+        name: "Empty line test",
+        input: [``, 0, 2],
+        expect: [],
+      },
+      {
+        name: "Single empty space test",
+        input: [` `, 0, 2],
+        expect: [` `],
+      },
+      {
+        name: "Single new line test",
+        input: [`\n`, 0, 2],
+        expect: [``, ``],
+      },
+      {
+        name: "Single line w/o new line test",
+        input: [`123`, 0, 2],
+        expect: [`123`],
+      },
+      {
+        name: "Three normal lines test",
+        input: [`1\n2\n3`, 0, 3],
+        expect: [`1`, `2`, `3`],
+      },
+      {
+        name: "Three normal lines test (limit to 2)",
+        input: [`1\n2\n3`, 0, 2],
+        expect: [`1`, `2`],
+      },
+      {
+        name: "Three normal lines test (limit to 0)",
+        input: [`1\n2\n3`, 0, 0],
+        expect: [],
+      },
+      {
+        name: "Three normal lines test (no limit; -1)",
+        input: [`1\n2\n3`, 0, -1],
+        expect: [`1`, `2`, `3`],
+      },
+      {
+        name: "End of stream test",
+        input: [`1\n2\n3`, 4, -1],
+        expect: [`3`],
+      },
+    ],
+    func: (stream, i, n) => {
+      return new Cursor(stream).linesAfterArray(i, n);
+    },
+  })
+);
+
+/**
+ * ***************************
+ * linesBeforeArray
+ * ***************************
+ */
+tester.add(
+  new Test({
+    name: "linesBeforeArray",
+    cases: [
+      // stream, i, n
+      {
+        name: "Empty line test",
+        input: [``, 0, 2],
+        expect: [],
+      },
+      {
+        name: "Single empty space test",
+        input: [` `, 0, 2],
+        expect: [``],
+      },
+      {
+        name: "Single new line test",
+        input: [`\n`, 0, 2],
+        expect: [``],
+      },
+      {
+        name: "Single line w/o new line test",
+        input: [`123`, 2, 2],
+        expect: [`12`],
+      },
+      {
+        name: "Three normal lines test",
+        input: [`1\n2\n3`, 4, 3],
+        expect: [`1`, `2`, ``],
+      },
+      {
+        name: "Three normal lines test (limit to 2)",
+        input: [`1\n2\n3`, 4, 2],
+        expect: [`2`, ``],
+      },
+      {
+        name: "Three normal lines test (limit to 0)",
+        input: [`1\n2\n3`, 4, 0],
+        expect: [],
+      },
+      {
+        name: "Three normal lines test (no limit; -1)",
+        input: [`1\n2\n3`, 4, -1],
+        expect: [`1`, `2`, ``],
+      },
+      {
+        name: "End of stream test",
+        input: [`1\n2\n3`, 0, -1],
+        expect: [``],
+      },
+    ],
+    func: (stream, i, n) => {
+      return new Cursor(stream).linesBeforeArray(i, n);
     },
   })
 );
