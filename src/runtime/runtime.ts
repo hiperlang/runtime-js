@@ -216,7 +216,7 @@ class Compiler {
 export class Cursor {
   constructor(public stream: string, public i: number = 0) {}
 
-  commonAsserts(i: number) {
+  assertWithinBoundaries(i: number) {
     // i must be within stream boundaries
     assert(
       i >= 0 && i < this.stream.length,
@@ -229,42 +229,93 @@ export class Cursor {
     return this;
   }
 
-  getCharAtI(i: number = this.i) {
+  currChar(i: number = this.i) {
     return this.stream[i];
   }
 
-  getStreamAfterI() {
-    return this.stream.slice(this.i, this.stream.length);
+  allAfter(i: number = this.i) {
+    return this.stream.slice(i, this.stream.length);
   }
 
-  getStreamBeforeI() {
-    return this.stream.slice(0, this.i);
+  allBefore(i: number = this.i) {
+    return this.stream.slice(0, i);
   }
 
-  getLineAround(i: number = this.i): [string, number] {
-    this.update(i);
-    const partBefore = this.getLinesBefore();
-    const partAfter = this.getLinesAfter();
+  lineAroundString(i: number = this.i): [string, number] {
+    const partBefore = this.linesBeforeString(i, 1);
+    const partAfter = this.linesAfterString(i, 1);
     return [partBefore + partAfter, partBefore.length];
   }
 
-  getLinesBefore(i: number = this.i, n: number = 1): string {
-    if (n == 0) return "";
+  linesBeforeArray(i: number = this.i, n: number = 1): string[] {
+    // i = -1 means start from the very end
+    if (i === -1) {
+      i = this.stream.length - 1;
+    }
+    return [];
+  }
 
-    this.commonAsserts(i);
+  linesAfterArray(i: number = this.i, n: number = 1): string[] {
+    if (n == 0 || this.stream.length == 0) return [];
+
+    this.assertWithinBoundaries(i);
+
+    let lines: string[] = [];
+    const stream = this.stream; // shorthand
+
+    // Set n to consume all lines if -1 otherwise keep its original value
+    // (length of stream + 1 >= the number of possible lines)
+    n = n == -1 ? stream.length + 1 : n;
+
+    // Set line counter
+    let counter = 0;
+
+    // Set ia (after i) to track forward
+    let ia = i;
+
+    // Consume n number of lines forward
+    while (true) {
+      if (stream[ia] == "\n") {
+        lines.push(stream.slice(i, ia)); // '\n' itself stripped
+        ia++; // Jump over '\n'
+        i = ia; // Start again
+        counter++;
+      }
+      if (counter == n || ia >= stream.length - 1) break;
+      ia++;
+    }
+
+    // Add last line only if we still need it
+    if (counter < n) {
+      // If the end of stream is a new line
+      if (stream[stream.length - 1] == "\n") {
+        lines.push(``); // Add an empty line
+      } else {
+        // Otherwise add the line that didn't end with '\n'
+        lines.push(stream.slice(i, ia + 1));
+      }
+    }
+
+    return lines;
+  }
+
+  linesBeforeString(i: number = this.i, n: number = 1): string {
+    if (n == 0 || this.stream.length == 0) return "";
+
+    this.assertWithinBoundaries(i);
 
     // step back
     let ib = i - 1;
 
     // set line counter
-    let lineCount = 0;
+    let count = 0;
 
     // consume n number of lines backwards
-    do {
-      if (this.stream[ib] == "\n") lineCount++;
-      if (lineCount == n || ib <= 0) break;
+    while (true) {
+      if (this.stream[ib] == "\n") count++;
+      if (count == n || ib <= 0) break;
       ib--;
-    } while (true);
+    }
 
     // check if we ended up at the end of the previous line
     if (this.stream[ib] == "\n") ib++;
@@ -272,10 +323,10 @@ export class Cursor {
     return this.stream.slice(ib, i);
   }
 
-  getLinesAfter(i: number = this.i, n: number = 1): string {
-    if (n == 0) return "";
+  linesAfterString(i: number = this.i, n: number = 1): string {
+    if (n == 0 || this.stream.length == 0) return "";
 
-    this.commonAsserts(i);
+    this.assertWithinBoundaries(i);
 
     let ia = i;
 
@@ -283,11 +334,11 @@ export class Cursor {
     let lineCount = 0;
 
     // consume n number of lines forward
-    do {
+    while (true) {
       if (this.stream[ia] == "\n") lineCount++;
       if (lineCount == n || ia >= this.stream.length) break;
       ia++;
-    } while (true);
+    }
 
     if (this.stream[ia] == "\n") ia++;
     // if (this.stream[i] == "\n") i++;
@@ -295,7 +346,7 @@ export class Cursor {
     return this.stream.slice(i, ia);
   }
 
-  getNonPrintCharName(char: string) {
+  nonPrintCharName(char: string) {
     switch (char) {
       case " ":
         return "SPACE";
@@ -306,9 +357,9 @@ export class Cursor {
     }
   }
 
-  getPrettyCharAt() {
-    if (this.i == this.stream.length) return "EOF";
-    return this.getNonPrintCharName(this.getCharAtI());
+  prettyCharAt(i: number = this.i) {
+    if (i == this.stream.length) return "EOF";
+    return this.nonPrintCharName(this.currChar());
   }
 }
 
