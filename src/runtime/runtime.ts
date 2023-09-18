@@ -1133,14 +1133,13 @@ export class TestRunner {
         stats += test.genStatsString(options);
       }
     } else {
-      console.log(this.tests);
-
       for (const [test, skip] of this.tests) {
         if (skip) return;
         test.execute();
         stats += test.genStatsString(options);
       }
     }
+    console.log(stats);
 
     return this;
   }
