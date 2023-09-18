@@ -220,7 +220,7 @@ export class Cursor {
     // i must be within stream boundaries
     assert(
       i >= 0 && i < this.stream.length,
-      Errors.Generic.IndexOutOfBounds(this.i, this.stream.length)
+      Errors.Generic.IndexOutOfBounds(i, this.stream.length)
     );
   }
 
