@@ -333,7 +333,7 @@ export class Cursor {
 
     // Add last line only if we still need it
     if (counter < n) {
-      // If the end of stream is a new line
+      // If the end of the stream was a new line
       if (stream[stream.length - 1] == "\n") {
         lines.push(``); // Add an empty line
       } else {
@@ -345,7 +345,7 @@ export class Cursor {
     return lines;
   }
 
-  linesBeforeString(i: number = this.i, n: number = 1): string {
+  linesBefore(i: number = this.i, n: number = 1): string {
     if (n == 0 || this.stream.length == 0) return "";
 
     this.assertWithinBoundaries(i);
@@ -369,7 +369,7 @@ export class Cursor {
     return this.stream.slice(ib, i);
   }
 
-  linesAfterString(i: number = this.i, n: number = 1): string {
+  linesAfter(i: number = this.i, n: number = 1): string {
     if (n == 0 || this.stream.length == 0) return "";
 
     this.assertWithinBoundaries(i);
