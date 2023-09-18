@@ -988,55 +988,58 @@ export class Test {
 
 /**
  * ***************************
- * Tester
+ * TestsRunner
  * ***************************
  */
 
-export class Tester {
-  tests: Test[] = [];
+export class TestRunner {
+  tests: Map<Test, boolean> = new Map();
+  testsOnFocus: Set<Test> = new Set();
 
   add(...tests: Test[]) {
-    this.tests.push(...tests);
+    tests.forEach((test) => {
+      this.tests.set(test, true);
+    });
     return this;
   }
 
   skip(...tests: Test[]) {
+    tests.forEach((test) => {
+      this.tests.set(test, false);
+    });
     return this;
   }
 
   focus(...tests: Test[]) {
-    this.tests = tests;
-  }
-
-  skipOn(...testsIndices: number[]) {
-    this.tests = this.tests.filter((_, i) => !testsIndices.includes(i));
+    tests.forEach((test) => {
+      this.tests.set(test, true);
+      this.testsOnFocus.add(test);
+    });
     return this;
   }
 
-  focusOn(...testsIndices: number[]) {
-    this.tests = testsIndices.map((i) => this.tests[i]);
+  focusOnLast() {
+    this.testsOnFocus.clear();
+    this.testsOnFocus.add([...this.tests.keys()][this.tests.size - 1]);
     return this;
-  }
-
-  setForAll({
-    ErrIsEqual,
-  }: {
-    ErrIsEqual?: (expectedErr: any, resultErr: any) => boolean;
-  }) {
-    if (ErrIsEqual)
-      this.tests.forEach((test) => {
-        test.data.errEqualFunc = ErrIsEqual;
-      });
   }
 
   run(options: TestStatsOptions = {}) {
-    if (this.tests.length == 0) return;
+    if (this.tests.size == 0 || this.testsOnFocus.size == 0) return;
 
     let stats = "";
-    this.tests.forEach((test) => {
+    if (this.testsOnFocus.size > 0) {
+      for (const test of this.testsOnFocus) {
       test.execute();
-      stats += test.getStatsString(options);
-    });
+        stats += test.genStatsString(options);
+      }
+    } else {
+      for (const [test, skip] of this.tests) {
+        if (skip) return;
+        test.execute();
+        stats += test.genStatsString(options);
+      }
+    }
     console.log(stats);
 
     return this;
