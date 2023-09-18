@@ -285,14 +285,14 @@ tester.add(
         expect: [],
       },
       {
-        name: "Three normal lines test (no limit; -1)",
+        name: "Three normal lines test (no limit; n = -1)",
         input: [`1\n2\n3`, 4, -1],
         expect: [`1`, `2`, ``],
       },
       {
-        name: "End of stream test",
-        input: [`1\n2\n3`, 0, -1],
-        expect: [``],
+        name: "All lines from the end test (i = -1)",
+        input: [`1\n2\n3`, -1, -1],
+        expect: [`1`, `2`, `3`],
       },
     ],
     func: (stream, i, n) => {
