@@ -241,9 +241,13 @@ export class Cursor {
     return this.stream.slice(0, i);
   }
 
-  lineAroundString(i: number = this.i): [string, number] {
-    const partBefore = this.linesBeforeString(i, 1);
-    const partAfter = this.linesAfterString(i, 1);
+  linesAround(
+    i: number = this.i,
+    before: number = 1,
+    after: number = 1
+  ): [string, number] {
+    const partBefore = this.linesBefore(i, before);
+    const partAfter = this.linesAfter(i, after);
     return [partBefore + partAfter, partBefore.length];
   }
 
