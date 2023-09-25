@@ -1,11 +1,13 @@
+-- ------------------
 -- Hyper language code examples
+-- ------------------
 
 # Hello
 
 `This is paragraph`
 
 -- this is function
-.fib (.a :int)
+.fib(.a :int)
   if (a :0) =>
     0
   else =>
@@ -16,9 +18,44 @@ The result of this
 function is ${fib(10)}
 ```
 
+-- ------------------
+-- Reference
+-- ------------------
+.x    create a name (positive association)
+\x    create a name (negative association)
+:x    interpret name as a type
+x     eval a name
+x()   eval a name (with args)
+#x    eval or mix a name in (at runtime)
+$x    eval or mix a name in (at comptime)
+${x}  place a name into a string
+=     associate (eager: references should exist; evaluate if possible)
+=>    associate (lazy: references may not exist; evaluate on demand)
+
+-- ------------------
+-- Mix in
+-- ------------------
+.color-blue
+  [color: blue]
+
+.table #color-blue
+
+-- Equals to
+.table [color: blue]
+
+
+-- ------------------
+-- Data structures
+-- ------------------
+
 .User
   .Name :str
   .Age :int
+  \sayHi() => `My name is ${@.Name}, I'm ${@.Age} years old.`
+  \varName = 1 + 1 * 2
+  .Email :str = varName
+
+if (User\sayHi@) => print(`Exists`)
 
 .table :User{*} #blue #block
   `Tom`, 1
@@ -28,12 +65,12 @@ function is ${fib(10)}
 <table...> -- project structure into HTML 
 
 /<div>/<div>
-/<div>//<div>
+/<div>//.var: <div> => print(var)
 
 .tableStyle
   @/<tr>/<td>
-    .color-blue
-    .text-bold
+    #color-blue
+    #text-bold
 
 <table>
   for (table) |user| =>
@@ -42,6 +79,9 @@ function is ${fib(10)}
       <td> user.age
 
 
+-- ------------------
+-- Underlying
+-- ------------------
 .table :type = `Hi everyone`
   @args
     .a :int
