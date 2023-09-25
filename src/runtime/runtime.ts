@@ -879,6 +879,7 @@ type TestStatsOptions = {
 
 export class Test {
   data: TestData;
+
   testResults = new Map<
     number,
     {
@@ -888,7 +889,8 @@ export class Test {
       resultErr?: any;
     }
   >();
-  static statsOptions: TestStatsOptions = {
+
+  static statsOptionsDefaults: TestStatsOptions = {
     showSummaryIfFailed: false,
     showSummaryAnyway: false,
     showCaseListIfFailed: true,
@@ -898,11 +900,11 @@ export class Test {
   };
 
   constructor(test: TestData) {
-    // Set default stats options if nothing provided or override
+    // Set or override default stats options if nothing provided
     test.options =
       test.options === undefined
-        ? Test.statsOptions
-        : Test.overrideOptions(Test.statsOptions, test.options);
+        ? Test.statsOptionsDefaults
+        : Test.overrideOptions(Test.statsOptionsDefaults, test.options);
 
     // Set default `equalFunc` if nothing provided
     test.equalFunc =
@@ -934,9 +936,12 @@ export class Test {
       options = Test.overrideOptions(this.data.options, options);
     }
     this.execute();
-    const stats = this.genStatsString(options);
+    const stats = this.dumpStats(options);
     console.log(stats);
   }
+
+  // TODO
+  executeCase(testCase: any, testIndex: number) {}
 
   execute() {
     const test = this.data; // shorthand
@@ -1087,7 +1092,7 @@ export class Test {
     return count;
   }
 
-  genStatsString(options: TestStatsOptions = {}): string {
+  dumpStats(options: TestStatsOptions = {}): string {
     // Override options given in Test({...}) by ones passed in this function
     if (this.data.options) {
       options = Test.overrideOptions(this.data.options, options);
@@ -1109,46 +1114,45 @@ export class Test {
     const testEmpty = totalCases == 0;
 
     // Initialize output buffer
-    let out = new Printer(3, ` `);
+    let out = new Logger({ tabSize: 3 });
 
     // Show test status icon
-    // out.add(testFailed ? `🔴 ` : `🟢 `);
     if (!testEmpty && testFailed) {
-      out.add(`🔴 `);
+      out.insRaw(`🔴 `);
     } else if (!testEmpty && testSkipped) {
-      out.add(`🟡 `);
+      out.insRaw(`🟡 `);
     } else {
-      out.add(`🟢 `);
+      out.insRaw(`🟢 `);
     }
 
     // Show test name
-    out.add(testName + ` `);
+    out.insRaw(testName + ` `);
 
     // Show test short stats
-    out.add(`(${passedCases}/${totalCases} passed; ${testCoverage}%)`);
+    out.insRaw(`(${passedCases}/${totalCases} passed; ${testCoverage}%)`);
+    out.insRawEndLine();
 
     // No reason to proceed
     if (testEmpty) {
-      return out.buffer;
+      return out.dump();
     }
 
     // Otherwise
-    out.newline();
-    out.tab();
+    out.incTab();
 
     // Show a test summary (if failed or enabled)
     if (
       (testFailed && options.showSummaryIfFailed) ||
       options.showSummaryAnyway
     ) {
-      out.line(`    `);
-      out.line(`total:   ${totalCases}`);
-      out.line(`passed:  ${passedCases}`);
-      out.line(`failed:  ${failedCases}`);
+      out.insLine(`    `);
+      out.insLine(`total:   ${totalCases}`);
+      out.insLine(`passed:  ${passedCases}`);
+      out.insLine(`failed:  ${failedCases}`);
       if (skippedCases > 0) {
-        out.line(`skipped: ${skippedCases}`);
+        out.insLine(`skipped: ${skippedCases}`);
       }
-      out.line(`covers:  ${testCoverage}%`);
+      out.insLine(`covers:  ${testCoverage}%`);
     }
 
     // Begin listing test cases (if failed or enabled)
@@ -1159,10 +1163,10 @@ export class Test {
         options.showCaseDetailsAnyway
       )
     ) {
-      return out.buffer; // Otherwise, stop here
+      return out.dump(); // Otherwise, stop here
     }
 
-    out.line(`    `);
+    out.insLine(`    `); // phony line
 
     // For each test case
     let testOrder = 1;
@@ -1174,32 +1178,32 @@ export class Test {
       const caseFailed = caseStatus === "failed";
       const caseSkipped = caseStatus === "skipped";
 
-      out.addTab();
+      out.insRawTab();
 
       // Show case status icon
       if (caseFailed) {
-        out.add(`🔴 `);
+        out.insRaw(`🔴 `);
       } else if (caseSkipped) {
-        out.add(`🟡 `);
+        out.insRaw(`🟡 `);
       } else {
-        out.add(`🟢 `);
+        out.insRaw(`🟢 `);
       }
 
       // Show case ordinal number
-      out.add(`${testOrder}/${totalCases} `);
+      out.insRaw(`${testOrder}/${totalCases} `);
 
       // Show case failed/passed status
       if (caseFailed) {
-        out.add(`failed`);
+        out.insRaw(`failed`);
       } else if (caseSkipped) {
-        out.add(`skipped`);
+        out.insRaw(`skipped`);
       } else {
-        out.add(`passed`);
+        out.insRaw(`passed`);
       }
 
       // Show case name (if available)
-      out.add(caseName);
-      out.newline();
+      out.insRaw(caseName);
+      out.insRawEndLine();
 
       // Show case details (if failed or allowed or forced)
       if (
@@ -1208,49 +1212,53 @@ export class Test {
         caseData.details
       ) {
         // out.tab(); // start case details list
-        out.line(`    `);
+        out.insLine(`    `);
 
         // Show test case fail reason
         if (caseFailed) {
-          out.line(`reason:      ${caseResult.reason!.message}`);
+          out.insLine(`reason:      ${caseResult.reason!.message}`);
         }
 
         // Show function input (regardless)
-        out.line(`input:       ${Test.getDataString(caseData.input)}`);
+        out.insLine(`input:       ${Test.dumpDataString(caseData.input)}`);
 
         // Show function's expected (error) result
         if ("expectErr" in caseData) {
-          out.line(`expectedErr: ${Test.getDataString(caseData.expectErr)}`);
+          out.insLine(
+            `expectedErr: ${Test.dumpDataString(caseData.expectErr)}`
+          );
         }
         if ("expect" in caseData) {
-          out.line(`expected:    ${Test.getDataString(caseData.expect)}`);
+          out.insLine(`expected:    ${Test.dumpDataString(caseData.expect)}`);
         }
 
         // Show function's obtained (error) result (if not skipped)
         if (!caseSkipped) {
           if ("resultErr" in caseResult) {
-            out.line(
-              `resultErr:   ${Test.getDataString(caseResult.resultErr)}`
+            out.insLine(
+              `resultErr:   ${Test.dumpDataString(caseResult.resultErr)}`
             );
           } else if ("result" in caseResult) {
-            out.line(`result:      ${Test.getDataString(caseResult.result)}`);
+            out.insLine(
+              `result:      ${Test.dumpDataString(caseResult.result)}`
+            );
           }
         }
 
-        out.line(`    `);
+        out.insLine(`    `);
         // out.untab(); // end case details list
       }
       testOrder++;
     }
 
     // add a trailing line if cases exist and listed
-    if (!out.buffer.endsWith(`    \n`)) {
-      out.line(`    `);
+    if (!out.dump().endsWith(`    \n`)) {
+      out.insLine(`    `);
     }
 
-    out.untab(); // end the list of cases
+    out.decTab(); // end the list of cases
 
-    return out.buffer;
+    return out.dump();
   }
 
   static overrideOptions(
@@ -1260,46 +1268,7 @@ export class Test {
     return { ...oldOptions, ...newOptions };
   }
 
-  static Error = {
-    ExpectedResultDoesNotMatch: {
-      code: 0,
-      message: `Function result does not match the expected result.`,
-    },
-    ExpectedErrorButFuncSucceeded: {
-      code: 1,
-      message: `Expected an error, but the function succeeded.`,
-    },
-    ExpectedErrorDoesNotMatch: {
-      code: 2,
-      message: `Function error does not match the expected error.`,
-    },
-    FuncFailedWithError: {
-      code: 3,
-      message: `Expected a normal result, but the function threw an error.`,
-    },
-    MissingExpectedOrExpectedErrField: {
-      code: 4,
-      message: `Please provide an \`expect\` or \`expectErr\` field (but not both).`,
-    },
-    EqualFuncFailed: (err: any) => ({
-      code: 5,
-      message: `Comparison of expected and obtained results (\`equalFunc\`) failed with the following error: \`${JSON.stringify(
-        err
-      )}\`.`,
-    }),
-    ErrEqualFuncFailed: (err: any) => ({
-      code: 6,
-      message: `Comparison of expected and obtained errors (\`errEqualFunc\`) failed with the following error: \`${JSON.stringify(
-        err
-      )}\`.`,
-    }),
-    InputDoesNotMatchFuncSignature: (a: number, b: number) => ({
-      code: 7,
-      message: `The number of arguments in the input does not match the expected signature of \`func\`: ${a} provided, but ${b} expected.`,
-    }),
-  };
-
-  static getDataString(unknown: any): string {
+  static dumpDataString(unknown: any): string {
     if (typeof unknown === "function") {
       return `[function] ${Test.flattenString(unknown.toString())}`;
     }
@@ -1381,6 +1350,45 @@ export class Test {
     }
     return result;
   }
+
+  static Error = {
+    ExpectedResultDoesNotMatch: {
+      code: 0,
+      message: `Function result does not match the expected result.`,
+    },
+    ExpectedErrorButFuncSucceeded: {
+      code: 1,
+      message: `Expected an error, but the function succeeded.`,
+    },
+    ExpectedErrorDoesNotMatch: {
+      code: 2,
+      message: `Function error does not match the expected error.`,
+    },
+    FuncFailedWithError: {
+      code: 3,
+      message: `Expected a normal result, but the function threw an error.`,
+    },
+    MissingExpectedOrExpectedErrField: {
+      code: 4,
+      message: `Please provide an \`expect\` or \`expectErr\` field (but not both).`,
+    },
+    EqualFuncFailed: (err: any) => ({
+      code: 5,
+      message: `Comparison of expected and obtained results (\`equalFunc\`) failed with the following error: \`${JSON.stringify(
+        err
+      )}\`.`,
+    }),
+    ErrEqualFuncFailed: (err: any) => ({
+      code: 6,
+      message: `Comparison of expected and obtained errors (\`errEqualFunc\`) failed with the following error: \`${JSON.stringify(
+        err
+      )}\`.`,
+    }),
+    InputDoesNotMatchFuncSignature: (a: number, b: number) => ({
+      code: 7,
+      message: `The number of arguments in the input does not match the expected signature of \`func\`: ${a} provided, but ${b} expected.`,
+    }),
+  };
 }
 
 /**
@@ -1429,13 +1437,13 @@ export class TestRunner {
     if (this.testsOnFocus.size > 0) {
       for (const test of this.testsOnFocus) {
       test.execute();
-        stats += test.genStatsString(options);
+        stats += test.dumpStats(options);
       }
     } else {
       for (const [test, skip] of this.tests) {
         if (skip) return;
         test.execute();
-        stats += test.genStatsString(options);
+        stats += test.dumpStats(options);
       }
     }
     console.log(stats);
