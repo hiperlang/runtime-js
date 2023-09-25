@@ -97,26 +97,26 @@ class Runtime {
  * ***************************
  */
 
-class Compiler {
-  c_line: number = 1;
-  c_lvl: number = 0; // current indent level
-  c_tabsize: number = 0; // current indent size
-  trim_size: number = -1; // leading indent size for every line
+// TODO
+// scanning naming convention:
+// trySpace -- move i forward
+// expectSpace -- move i forward to check and rewind it back
+// mustSpace -- expect+scan
+
+export class Compiler {
+  cl: number = 1; // current line
+  cil: number = 0; // current indent level
+  cis: number = 0; // current indent size
+  trimSize: number = -1; // leading indent size for every line
   ast: Map<string, string>[] = [new Map()];
   stream: string = "";
   i: number = 0;
-  lineProcessor: Cursor;
+  logger: Logger = new Logger();
 
-  constructor(stream: string) {
+  constructor(stream: string, i: number = 0) {
     this.stream = stream;
-    this.lineProcessor = new Cursor(stream, this.i);
+    this.i = i;
   }
-
-  // TODO
-  // scanning naming convention:
-  // trySpace -- move i forward
-  // expectSpace -- move i forward to check and rewind it back
-  // mustSpace -- expect+scan
 
   scanSpace(): number {
     let lead_space = 0;
@@ -126,10 +126,10 @@ class Compiler {
           lead_space++;
           break;
         case "\n":
-          this.c_line++;
+          this.cl++;
           lead_space = 0;
           break;
-        default:
+        default: // char or end of stream
           return lead_space;
       }
       this.i++;
@@ -146,31 +146,30 @@ class Compiler {
     while (this.i < this.stream.length) {
       let lead_space_size = this.scanSpace();
 
-      // detect trim size (once)
-      if (this.trim_size < 0) {
-        this.trim_size = lead_space_size;
+      // Detect trim size (once)
+      if (this.trimSize < 0) {
+        this.trimSize = lead_space_size;
       }
 
-      // remove trimming space
-      lead_space_size -= this.trim_size;
+      // Remove trimming space
+      lead_space_size -= this.trimSize;
 
       // if (trimmed) leading space > 0 then
       if (lead_space_size > 0) {
         // set indentation size (once)
-        if (this.c_tabsize < 0) {
-          this.c_tabsize = lead_space_size;
+        if (this.cis < 0) {
+          this.cis = lead_space_size;
         }
-        // if but not aligned with tab size
-        if (lead_space_size != this.c_lvl * this.c_tabsize) {
-          throw Errors.MockError("Indentation is not aligned");
+        // if not aligned with tab size
+        if (lead_space_size != this.cil * this.cis) {
+          throw Compiler.Error.IndentIsNotAligned();
         } else {
-          this.c_lvl++;
+          this.cil++;
           this.ast.push(new Map());
         }
       }
 
-      this.syntaxErr(52);
-
+      this.syntaxErr(7);
       break;
       this.i++;
     }
@@ -181,21 +180,30 @@ class Compiler {
     linesBefore: number = 2,
     linesAfter: number = 2
   ) {
-    if (linesBefore < 0 || linesAfter < 0)
-      throw Errors.MockError(
-        "linesBefore and linesAfter cannot be negative numbers"
-      );
+    // Add shift to i within stream boundaries
+    // const shifted_i = this.addInRange(this.i, shift, 0, this.stream.length - 1);
+    // const [line, idx] = this.cursor.linesAround(shifted_i);
+    /*
+    1 | `Hello world!`
+    2 |   this.new
+    ~~~~~~^ 
+    3 | if (bla) =>
 
-    // add shift to i
-    const this_i = this.addInRange(this.i, shift, 0, this.stream.length - 1);
+    setCols([len: 3, postfix: ` | `], [useTabs: true])
+    forEach(line, index =>
+      addRow(index + 1, line)
+    addPointLine(6, `^`, `~`)
+
+    pointPos(i, pointer, filler)
+    */
   }
 
   logSelf() {
     console.log("this.stream:\n", this.stream);
     console.log("this.i: " + this.i);
-    console.log("this.c_line: " + this.c_line);
-    console.log("this.c_lvl: " + this.c_lvl);
-    console.log("this.tree: " + (this.ast.length == 0 ? "[empty]" : this.ast));
+    console.log("this.currLine: " + this.cl);
+    console.log("this.currLvl: " + this.cil);
+    console.log("this.ast: " + (this.ast.length == 0 ? "[empty]" : this.ast));
   }
 
   addInRange(a: number, b: number, min: number, max: number) {
@@ -204,41 +212,6 @@ class Compiler {
     if (sum > max) return max;
     if (sum < min) return min;
     return sum;
-  }
-}
-
-/**
- * ***************************
- * Cursor
- * ***************************
- */
-
-export class Cursor {
-  constructor(public stream: string, public i: number = 0) {}
-
-  assertWithinBoundaries(i: number) {
-    // i must be within stream boundaries
-    assert(
-      i >= 0 && i < this.stream.length,
-      Errors.Generic.IndexOutOfBounds(i, this.stream.length)
-    );
-  }
-
-  update(i: number) {
-    this.i = i;
-    return this;
-  }
-
-  currChar(i: number = this.i) {
-    return this.stream[i];
-  }
-
-  allAfter(i: number = this.i) {
-    return this.stream.slice(i, this.stream.length);
-  }
-
-  allBefore(i: number = this.i) {
-    return this.stream.slice(0, i);
   }
 
   linesAround(
@@ -403,10 +376,46 @@ export class Cursor {
     }
   }
 
-  prettyCharAt(i: number = this.i) {
-    if (i == this.stream.length) return "EOF";
-    return this.nonPrintCharName(this.currChar());
+  assertWithinBoundaries(i: number) {
+    // i must be within stream boundaries
+    assert(
+      i >= 0 && i < this.stream.length,
+      Compiler.Error.IndexOutOfBounds(i, this.stream.length)
+    );
   }
+
+  /**
+   * ***************************
+   * Errors
+   * ***************************
+   */
+
+  // 1xxx for syntactic errors
+  // 2xxx for semantic errors
+  // 3xxx for type errors
+  // 4xxx for compiler options errors
+  // 5xxx for command line errors
+  static Error = {
+    IndentIsNotAligned: () => ({
+      code: 1,
+      message: `Indentation is not aligned`,
+    }),
+    IndexOutOfBounds: (i: number, length: number) => ({
+      code: 1,
+      message: `Index (${i}) is out of stream boundaries. ${
+        length === 0
+          ? `The stream is empty.`
+          : `For a stream of length ${length}, valid indices are within [0..${
+              length - 1
+            }].`
+      }`,
+    }),
+
+    StreamIsEmpty: () => ({
+      code: 2,
+      message: `The stream is empty.`,
+    }),
+  };
 }
 
 /**
