@@ -420,136 +420,426 @@ export class Compiler {
 
 /**
  * ***************************
- * Printer
+ * Logger
  * ***************************
  */
+namespace LoggerTypes {
+  export type Column = {
+    lines?: string[];
 
-export class Printer {
-  buffer: string = "";
-  level: number = 0; // current tab level
-  constructor(public tabSize: number = 2, public tabChar: string = ` `) {}
+    len?: number | { min?: number; max?: number };
+    align?: "left" | "right";
+    filler?: string;
 
-  prepend(part: string) {
-    this.buffer = part + this.buffer;
+    postfix?: string;
+    prefix?: string;
+
+    tabSize?: number;
+    tabChar?: string;
+    tabDepth?: number;
+
+    cut?: boolean;
+    cutWith?: string;
+  };
+}
+
+export class Logger {
+  cols: LoggerTypes.Column[] = [];
+  cc: LoggerTypes.Column; // current column
+  cci: number = 0; // current column index
+  lc: boolean = true; // a hint if a previous line was closed
+
+  constructor(...cols: LoggerTypes.Column[]) {
+    // If no columns given, provide a default one
+    if (cols.length == 0) {
+      this.cols.push(Logger.defaultCol());
+    }
+    // Otherwise, initialize given columns
+    else {
+      cols.forEach((col) => {
+        col = Logger.mergeWithDefaults(col);
+        this.cols.push(col);
+      });
+    }
+
+    // One column is *always* available after the object construction
+    this.cc = this.cols[this.cci];
+  }
+
+  static defaultCol(): LoggerTypes.Column {
+    // By return a new object each time, we clear the column buffer to prevent
+    // copying the same column pointer over other buffers
+    return {
+      lines: [],
+
+      len: {},
+      align: `left`,
+      filler: ` `,
+
+      postfix: ``,
+      prefix: ``,
+
+      tabDepth: 0,
+      tabSize: 2,
+      tabChar: ` `,
+
+      cut: true,
+      cutWith: `..`,
+    };
+  }
+
+  static overrideCol(oldCol: LoggerTypes.Column, newCol: LoggerTypes.Column) {
+    return { ...oldCol, ...newCol };
+  }
+
+  static correctifyCol(col: LoggerTypes.Column) {
+    function present(field: any) {
+      return field !== undefined;
+    }
+
+    function assert(cond: boolean, message: string) {
+      if (!cond) throw Logger.Error.IllFormedColumnOption(message);
+    }
+
+    // {lines: ...}
+
+    assert(
+      Array.isArray(col.lines),
+      `The 'lines' option should be an array (of strings).`
+    );
+
+    // {len: ...}
+
+    assert(
+      typeof col.len === "number" || typeof col.len === "object",
+      `The 'len' option should be either a positive number or an object with 'min' and/or 'max' options.`
+    );
+    // If length is {len: number}
+    if (typeof col.len === "number") {
+      assert(
+        col.len >= 0,
+        `The 'len' option can only accept positive numbers (>= 0) or an object with 'min' and/or 'max' options.`
+      );
+      col.len = { min: col.len, max: col.len };
+    }
+    // If length is {len: {min: number, max: number}}
+    else if (typeof col.len === "object") {
+      let min = -1;
+      let max = -1;
+
+      if (present(col.len?.min)) {
+        assert(
+          typeof col.len.min === "number" && col.len.min! >= 0,
+          `The length's 'min' option can only accept positive numbers (>= 0).`
+        );
+        min = col.len.min!;
+      } else {
+        min = 0;
+      }
+
+      if (present(col.len?.max)) {
+        assert(
+          typeof col.len.max === "number" && col.len.max! >= 0,
+          `The length's 'max' option can only accept positive numbers (>= 0).`
+        );
+        max = col.len.max!;
+      } else {
+        max = Number.MAX_SAFE_INTEGER;
+      }
+
+      assert(
+        min <= max,
+        `The length's 'min' option should be less or equal to 'max'.`
+      );
+
+      col.len = { min: min, max: max };
+    }
+
+    // {align: ...}
+
+    assert(
+      typeof col.align === "string" &&
+        (col.align === `left` || col.align === `right`),
+      `The 'align' option should be either 'left' or 'right'.`
+    );
+
+    // {filler: ...}
+
+    assert(
+      typeof col.filler === "string" && col.filler.length === 1,
+      `The 'filler' option should be a single character.`
+    );
+
+    // {prefix/postfix: ...}
+
+    assert(
+      typeof col.prefix === "string" && typeof col.postfix === "string",
+      `The 'prefix' and 'postfix' options should be strings and are part of the column (min/max) length.`
+    );
+
+    // {tabDepth: ...}
+
+    assert(
+      typeof col.tabDepth === "number" && col.tabDepth >= 0,
+      `The 'tabDepth' option should be a non-negative number.`
+    );
+
+    // {tabSize: ...}
+
+    assert(
+      typeof col.tabSize === "number" && col.tabSize >= 0,
+      `The 'tabSize' option should be a positive number.`
+    );
+
+    // {tabChar: ...}
+
+    assert(
+      typeof col.tabChar === "string" && col.tabChar.length === 1,
+      `The 'tabChar' option should be a single character.`
+    );
+
+    // {cut: ...}
+
+    assert(
+      typeof col.cut === "boolean",
+      `The 'cut' option should be either true or false.`
+    );
+
+    // {cutWith: ...}
+
+    assert(
+      typeof col.cutWith === "string",
+      `The 'cutWith' option should be a string. If it exceeds max column length, it will be contracted.`
+    );
+  }
+
+  static mergeWithDefaults(col: LoggerTypes.Column) {
+    const newCol = Logger.overrideCol(Logger.defaultCol(), col);
+    Logger.correctifyCol(newCol);
+    return newCol;
+  }
+
+  assertWithinBounds(colIndex: number, colLen: number) {
+    if (colLen == 0) throw Logger.Error.ColumnsEmpty();
+
+    if (colIndex < 0 || colIndex > colLen - 1)
+      throw Logger.Error.ColumnIdxOutOfBoundaries(colIndex, colLen);
+  }
+
+  // Set current column by index
+  updateCurrColIdx(colIndex: number) {
+    // Check
+    this.assertWithinBounds(colIndex, this.cols.length);
+
+    // Update
+    this.cc = this.cols[colIndex];
+
+    return this;
+  }
+
+  // Set column options for current column
+  updateCurrCol(colOptions: LoggerTypes.Column) {
+    return this.updateOrResetCol(this.cci, colOptions, false);
+  }
+
+  // Set column options for a given column
+  updateColAt(colIndex: number, colOptions: LoggerTypes.Column) {
+    return this.updateOrResetCol(colIndex, colOptions, false);
+  }
+
+  // Reset column options for the current column
+  resetCurrCol(colOptions: LoggerTypes.Column = {}) {
+    return this.updateOrResetCol(this.cci, colOptions, true);
+  }
+
+  // Reset column options for a given column
+  resetColAt(colIndex: number, colOptions: LoggerTypes.Column = {}) {
+    return this.updateOrResetCol(colIndex, colOptions, true);
+  }
+
+  // Helper method to update or reset column options
+  private updateOrResetCol(
+    colIndex: number,
+    colOptions: LoggerTypes.Column,
+    reset: boolean = false
+  ) {
+    // Check
+    this.assertWithinBounds(colIndex, this.cols.length);
+
+    // Create base column options
+    const baseCol = reset ? Logger.defaultCol() : this.cols[colIndex];
+
+    // Override baseCol with provided colOptions
+    const updatedCol = Logger.overrideCol(baseCol, colOptions);
+    Logger.correctifyCol(updatedCol);
+    this.cols[colIndex] = updatedCol;
+
+    // Update current column pointer if needed
+    if (colIndex === this.cci) {
+      this.cc = updatedCol;
+    }
+
+    return this;
+  }
+
+  // Move focus to the next column
+  nextCol() {
+    // Increment the current column index in a circular manner
+    this.cci = (this.cci + 1) % this.cols.length;
+
+    // Update pointer to the current column
+    this.cc = this.cols[this.cci];
+
+    return this;
+  }
+
+  // Insert raw characters
+  insRaw(chars: string) {
+    if (chars.length === 0) return this;
+
+    // Initialize buffer if doesn't exist
+    if (this.cc.lines === undefined) {
+      this.cc.lines = [];
+    }
+
+    // If last line is closed, insert to a new one
+    if (this.lc) {
+      this.cc.lines.push(``);
+      this.lc = false;
+    }
+
+    // Flash
+    this.cc.lines[this.cc.lines.length - 1] += chars;
+
+    return this;
+  }
+
+  // Insert a tab at the current depth
+  insRawTab(depth: number = this.cc.tabDepth!) {
+    return this.insRaw(this.getTab(depth));
+  }
+
+  // End the line for the previous "insert raw" mode
+  insRawEndLine() {
+    this.lc = true;
+    return this;
+  }
+
+  // Insert a full line with indentation if configured
+  insLine(chars: string) {
+    // Initialize buffer if doesn't exist
+    if (this.cc.lines === undefined) {
+      this.cc.lines = [];
+    }
+
+    // Add tab if set
+    chars = this.getTab() + chars;
+
+    // For Typescript
+    if (typeof this.cc.len !== "object") throw Error("Unreachable");
+
+    // Cut or align the content
+    if (chars.length > this.cc.len.max!) {
+      if (!this.cc.cut) throw Logger.Error.ColumnContentExceeds();
+      //    cut
+    } else if (chars.length < this.cc.len.min!) {
+      //    fill according to col.align
+    }
+
+    // Add pre/postfix if set (do not affect min/max length)
+    if (this.cc.prefix) chars = this.cc.prefix + chars;
+    if (this.cc.postfix) chars = chars + this.cc.postfix;
+
+    // Flash resulting line
+    this.cc.lines.push(chars);
+    this.lc = true; // line is closed
+
     return this;
   }
 
   // TODO
-  prependLine(line: string) {
-    this.buffer =
-      this.tabChar.repeat(this.tabSize).repeat(this.level) +
-      line +
-      "\n" +
-      this.buffer;
+  insRow(...colChars: string[]) {}
+
+  // Increase the level of indentation
+  incTab(depth: number = 1) {
+    this.cc.tabDepth! += depth;
     return this;
   }
 
-  // add tab
-  addTab(level: number = this.level) {
-    this.buffer += this.tabChar.repeat(this.tabSize).repeat(level);
+  // Decrease the level of indentation
+  decTab(depth: number = 1) {
+    this.cc.tabDepth! -= depth;
+    if (this.cc.tabDepth! < 0) this.cc.tabDepth! = 0;
     return this;
   }
 
-  // add part of a line
-  add(part: string) {
-    this.buffer += part;
-    return this;
+  getTab(
+    depth: number = this.cc.tabDepth!,
+    size: number = this.cc.tabSize!,
+    char: string = this.cc.tabChar!
+  ): string {
+    if (size <= 0 || depth <= 0 || char === ``) return ``;
+    return char.repeat(size).repeat(depth);
   }
 
-  // add new line
-  newline() {
-    this.buffer += "\n";
-    return this;
-  }
+  dump(): string {
+    // Get max column length among all
+    let maxLen = 0;
+    this.cols.forEach((col) => {
+      if (col.lines === undefined) return;
+      if (col.lines.length > maxLen) {
+        maxLen = col.lines.length;
+}
+    });
 
-  // increase the level of indentation
-  tab(level: number = 1) {
-    this.level += level;
-    return this;
-  }
+    // Resulting string
+    let out = "";
 
-  // decrease the level of indentation
-  untab(level: number = 1) {
-    this.level = this.level == 0 ? 0 : this.level - 1;
-    return this;
-  }
+    // For every row
+    for (let row = 0; row < maxLen; row++) {
+      // For every column
+      for (const col of this.cols) {
+        if (col.lines === undefined || col.lines[row] === undefined) continue;
+        // Merge lines
+        out += col.lines[row];
+}
 
-  // add line
-  line(line: string) {
-    this.buffer +=
-      this.tabChar.repeat(this.tabSize).repeat(this.level) + line + "\n";
-    return this;
-  }
+      // End of row
+      out += "\n";
+}
+
+    return out;
+    }
 
   print() {
-    console.log(this.buffer);
-    return this.buffer;
-  }
+    console.log(this.dump());
 }
 
 /**
- * ***************************
- * Utilities
- * ***************************
- */
-
-function assert(cond: boolean, error: ErrorType) {
-  if (!cond) throw error;
-}
-
-function execFn(fn: Function) {
-  const numArgs = fn.length;
-  const args = new Array(numArgs).fill(undefined);
-  return fn.call(null, args);
-}
-
-function isIterable(input: any) {
-  try {
-    for (const _ of input) {
-    }
-    return true;
-  } catch (e) {
-    return false;
-  }
-}
-
-/**
- * ***************************
  * Errors
- * ***************************
  */
-
-type ErrorType = { code: number; message: string };
-
-// 1xxx for syntactic errors
-// 2xxx for semantic errors
-// 3xxx for type errors
-// 4xxx for compiler options errors
-// 5xxx for command line errors
-export const Errors = {
-  Generic: {
-    IndexOutOfBounds: (i: number, length: number) => ({
-      code: 1,
-      message: `Index (${i}) is out of stream boundaries. ${
-        length === 0
-          ? `The stream is empty.`
-          : `For a stream of length ${length}, valid indices are within [0..${
-              length - 1
-            }].`
-      }`,
-    }),
-
-    StreamIsEmpty: () => ({
+  static Error = {
+    IllFormedColumnOption: (message: string) => ({
       code: 2,
-      message: `The stream is empty.`,
+      message: `Ill-formed column in Logger. ` + message,
     }),
-  },
 
-  RemoveThisError: (msg: string) => ({
-    code: 99,
-    message: msg,
+    ColumnIdxOutOfBoundaries: (i: number, length: number) => ({
+      code: 1,
+      message: `Column index (${i}) is out of boundaries (the number of columns is ${length}).`,
+    }),
+
+    ColumnsEmpty: () => ({
+      code: 2,
+      message: `Logger should have at least one column configured.`,
+    }),
+
+    ColumnContentExceeds: () => ({
+      code: 3,
+      message: `Column content exceeds the maximum length allowed by the 'max' option.`,
   }),
 };
+}
 
 /**
  * ***************************
