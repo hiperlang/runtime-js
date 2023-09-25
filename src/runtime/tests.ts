@@ -1,4 +1,4 @@
-import { Test, Compiler, Printer, TestRunner, Errors, Cursor } from "./runtime";
+import { Test, Compiler, TestRunner, Logger } from "./runtime";
 
 const tester = new TestRunner();
 
@@ -48,7 +48,7 @@ tester.add(
       },
     ],
     func: (stream: string, i: number) => {
-      return new Cursor(stream).lineAround(i);
+      return new Compiler(stream).linesAround(i);
     },
   })
 );
@@ -105,7 +105,7 @@ tester.add(
       },
     ],
     func: (stream: string, i: number, n: number) => {
-      return new Cursor(stream).linesBefore(i, n);
+      return new Compiler(stream).linesBefore(i, n);
     },
   })
 );
@@ -163,16 +163,16 @@ tester.add(
       {
         name: "Positive out of bounds test",
         input: [` `, 1, 1],
-        expectErr: Errors.Generic.IndexOutOfBounds(-1, -1),
+        expectErr: Compiler.Error.IndexOutOfBounds(-1, -1),
       },
       {
         name: "Negative out of bounds test",
         input: [` `, -1, 1],
-        expectErr: Errors.Generic.IndexOutOfBounds(-1, -1),
+        expectErr: Compiler.Error.IndexOutOfBounds(-1, -1),
       },
     ],
     func: (stream: string, i: number, n: number) => {
-      return new Cursor(stream).linesAfter(i, n);
+      return new Compiler(stream).linesAfter(i, n);
     },
   })
 );
@@ -234,7 +234,7 @@ tester.add(
       },
     ],
     func: (stream, i, n) => {
-      return new Cursor(stream).linesAfterArray(i, n);
+      return new Compiler(stream).linesAfterArray(i, n);
     },
   })
 );
@@ -265,9 +265,14 @@ tester.add(
         expect: [``],
       },
       {
-        name: "Single line w/o new line test",
+        name: "Single line w/o new line at the end test",
         input: [`123`, 2, 2],
         expect: [`12`],
+      },
+      {
+        name: "Single normal line test",
+        input: [`123\n`, 3, 2],
+        expect: [`123`],
       },
       {
         name: "Three normal lines test",
@@ -296,14 +301,14 @@ tester.add(
       },
     ],
     func: (stream, i, n) => {
-      return new Cursor(stream).linesBeforeArray(i, n);
+      return new Compiler(stream).linesBeforeArray(i, n);
     },
   })
 );
 
 /**
  * ***************************
- * Line printer
+ * Logger
  * ***************************
  */
 tester.add(
@@ -323,23 +328,21 @@ line4
       },
     ],
     func: () => {
-      const printer = new Printer(4, `+`);
-      printer.newline();
-      printer.add("line");
-      printer.add("0");
-      printer.newline();
-      printer.line("line1");
-      printer.tab();
-      printer.line("line2");
-      printer.add("line3");
-      printer.newline();
-      printer.addTab(2);
-      printer.add("line4");
-      printer.newline();
-      printer.untab();
-      printer.untab();
-      printer.line("line4");
-      return printer.buffer;
+      const logger = new Logger({});
+      logger.insRaw("line");
+      logger.insRaw("0");
+      logger.insLine("line1");
+      logger.incTab();
+      logger.insLine("line2");
+      logger.insRaw("line3");
+      logger.insRawEndLine();
+      logger.insRawTab(2);
+      logger.insRaw("line4");
+      logger.insRawEndLine();
+      logger.decTab();
+      logger.decTab();
+      logger.insLine("line4");
+      return logger.dump();
     },
   })
 );
