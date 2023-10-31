@@ -1,7 +1,8 @@
 #!/bin/bash
 
 bunx conc --kill-others \
-    "esbuild \
+    "\
+    esbuild \
     src/runtime/tests.ts \
     --bundle \
     --format=iife \
@@ -11,17 +12,36 @@ bunx conc --kill-others \
     --entry-names=[dir]/[name] \
     --outdir=out/runtime \
     --legal-comments=inline \
-    --watch" \
-    \
-    "cpx \"src/**/*.{html,png,jpg,json}\" out \
-    --watch" \
-    \
-    "wds \
-    --root-dir=out \
-    --app-index=out/runtime/index.html \
-    --watch" \
-    \
+    --watch \
+    "\
+    "\
+    cpx \"src/**/*.{html,png,jpg,json,css,ico}\" out \
+    --watch \
+    "\
+    "\
+    wds \
+    --root-dir=out/website \
+    --debug \
+    --watch \
+    "\
+    "\
+    unocss \
+    src/website/index.html \
+    --out-file out/website/utilities.css \
+    --preflights false \
+    --watch \
+    "\
+    "\
+    postcss \
+    src/website/main.css \
+    --output out/website/main.css \
+    --use autoprefixer \
+    --autoprefixer \"> 1%, last 5 versions\" \
+    --watch \
+    "\
 
+
+# --app-index=out/runtime/index.html \
 #  "bun build \
 #     src/runtime/runtime.ts \
 #     --sourcemap external \
@@ -29,5 +49,3 @@ bunx conc --kill-others \
 #     --entry-naming=[dir]/[name].[ext] \
 #     --outdir=out/runtime \
 #     --watch" \
-
-# bunx postcss src/**/*.css --dir build/ --watch
