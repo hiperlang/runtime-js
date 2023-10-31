@@ -48,8 +48,8 @@ document.addEventListener("DOMContentLoaded", () => {
 
   // Start runtime if `lazy` is not set
   if (!SELF_SCRIPT?.hasAttribute("lazy")) {
-  const runtime = new Runtime(targets);
-  runtime.runOnTargets();
+    const runtime = new Runtime(targets);
+    runtime.runOnTargets();
   }
 });
 
@@ -103,117 +103,385 @@ class Runtime {
 // expectSpace -- move i forward to check and rewind it back
 // mustSpace -- expect+scan
 
+enum NodeType {
+  Root,
+  Undefined,
+  Comment,
+  String,
+  Number,
+  Name,
+  Space,
+}
+
+type NodeAttr = {
+  // address: derived?
+  archetype: NodeType;
+  associations: Node[];
+  // arguments: Node[];
+  // attributes: Node[];
+  ascendant: Node;
+  affinity: boolean;
+  accordance: null | Node[];
+  appearance: any;
+};
+
+type Node =
+  | { type: NodeType.Root; next: Node[]; parent: Node; affinity: boolean }
+  | { type: NodeType.Undefined }
+  | { type: NodeType.Comment; comment: string }
+  | { type: NodeType.String; value: string }
+  | { type: NodeType.Number; number: number }
+  | { type: NodeType.Name; name: string }
+  | { type: NodeType.Space; spaceSize: number };
+
 export class Compiler {
-  cl: number = 1; // current line
-  cil: number = 0; // current indent level
-  cis: number = 0; // current indent size
-  trimSize: number = -1; // leading indent size for every line
-  ast: Map<string, string>[] = [new Map()];
   stream: string = "";
+
   i: number = 0;
-  logger: Logger = new Logger();
+  li: number = 0;
+  node: Node = { type: NodeType.Undefined };
+  line: number = 1; // current line number
+
+  indSize: number = -1; // indent size for every scope level
+  trimSize: number = -1; // leading space size for every line
+
+  tree: Node[][] = [[]]; // root scope is always init-ed
+  scope: Node[] = this.tree[0]; // current scope
+  level: number = 1; // current scope index
 
   constructor(stream: string, i: number = 0) {
     this.stream = stream;
     this.i = i;
   }
 
-  scanSpace(): number {
-    let lead_space = 0;
-    while (true) {
-      switch (this.stream[this.i]) {
-        case " ":
-          lead_space++;
-          break;
-        case "\n":
-          this.cl++;
-          lead_space = 0;
-          break;
-        default: // char or end of stream
-          return lead_space;
-      }
-      this.i++;
-    }
+  enterScope() {
+    this.tree.push([]);
+    this.scope = this.tree[this.tree.length - 1];
+    this.level++;
+  }
+
+  savePos() {
+    this.li = this.i;
+  }
+
+  rewindPos() {
+    this.i = this.li;
+  }
+
+  commit() {
+    // Save node to AST
+    // this.cScope.set('','')
   }
 
   compile() {
     if (this.stream == "") return;
-    this.scanNext();
+
+    // Initialize trim size
+    if (this.nextFirstIndent_()) {
+      // If leading space for the first non-white char exists
+      if (this.node.type === NodeType.Space)
+        this.trimSize = this.node.spaceSize;
+    } else {
+      // Otherwise
+      this.trimSize = 0;
+    }
+
+    // Root scope is already initialized
+    // this.enterScope();
+
+    // Proceed...
+    this.next();
   }
 
-  scanNext() {
-    // enterLevel
-    while (this.i < this.stream.length) {
-      let lead_space_size = this.scanSpace();
-
-      // Detect trim size (once)
-      if (this.trimSize < 0) {
-        this.trimSize = lead_space_size;
-      }
-
-      // Remove trimming space
-      lead_space_size -= this.trimSize;
-
-      // if (trimmed) leading space > 0 then
-      if (lead_space_size > 0) {
-        // set indentation size (once)
-        if (this.cis < 0) {
-          this.cis = lead_space_size;
-        }
-        // if not aligned with tab size
-        if (lead_space_size != this.cil * this.cis) {
-          throw Compiler.Error.IndentIsNotAligned();
-        } else {
-          this.cil++;
-          this.ast.push(new Map());
-        }
-      }
-
-      this.syntaxErr(7);
-      break;
-      this.i++;
+  initIndentSize() {
+    if (this.indSize < 0) {
+      if (this.node.type !== NodeType.Space) return;
+      this.indSize = this.node.spaceSize;
     }
   }
 
-  syntaxErr(
+  // Checks if the current indent aligns with the expected level size
+  assertIndentAligned() {
+    if (this.node.type !== NodeType.Space) return;
+    // Assert tab is aligned with the current indent level
+    if (this.node.spaceSize !== this.level * this.indSize) {
+      throw Compiler.Error.IndentIsNotAligned();
+    }
+  }
+
+  // this.skipSpace() in every scan?
+  next() {
+    while (true) {
+      if (this.nextIndent_()) {
+        this.initIndentSize();
+        this.assertIndentAligned();
+        this.enterScope();
+        continue;
+      } else if (this.nextIs("{")) {
+        // TODO
+        if (!this.nextIs("}")) {
+          this.syntaxErr("Scope is not closed.");
+        }
+      } else if (this.nextString_()) {
+        this.scope.push(this.node);
+        if (this.nextNewline()) {
+          continue;
+        }
+      }
+
+      this.logSelf();
+      break;
+    }
+    //
+    // while (this.i < this.stream.length) {
+    //   let tabSize = this.scanLeadSpace();
+    //   if (tabSize > 0) {
+    //     // Assert tab is aligned with the current indent level
+    //     if (tabSize != this.cIndentLvl * this.cTabSize) {
+    //       throw Compiler.Error.IndentIsNotAligned();
+    //     }
+    //     this.cIndentLvl++;
+    //     // Otherwise initialize new tree level
+    //     this.tree.push(new Map());
+    //   }
+    //   // We are ready to parse entities...
+    //   this.logSelf();
+    //   this.syntaxErr(`Something...`, 10);
+    //   break;
+    //   this.i++;
+    // }
+  }
+
+  nextIs(openChar: string): boolean {
+    if (this.stream[this.i] === openChar) {
+      this.i++;
+      return true;
+    }
+    return false;
+  }
+
+  nextNewline() {
+    if (this.stream[this.i] === "\n") {
+      this.i++;
+      this.line++;
+      return true;
+    }
+    return false;
+  }
+
+  nextFirstIndent_(): boolean {
+    this.savePos();
+
+    // Scan
+    let leadSize = 0;
+    for (; true; this.i++) {
+      const currChar = this.stream[this.i];
+      if (currChar === " ") {
+        leadSize++;
+        continue;
+      } else if (currChar === "\n") {
+        leadSize = 0;
+        this.line++;
+        continue;
+      }
+      break;
+    }
+
+    // Save
+    if (leadSize > 0) {
+      this.node = {
+        type: NodeType.Space,
+        spaceSize: leadSize,
+      };
+      return true;
+    }
+    return false;
+  }
+
+  nextIndent_(): boolean {
+    this.savePos();
+
+    // Scan
+    let leadSize = 0;
+    for (; true; this.i++) {
+      if (this.stream[this.i] === " ") {
+        leadSize++;
+        continue;
+      }
+      break;
+    }
+
+    // Save
+    if (leadSize > 0) {
+      this.node = {
+        type: NodeType.Space,
+        spaceSize: leadSize,
+      };
+      return true;
+    }
+    return false;
+  }
+
+  nextString_(): boolean {
+    this.savePos();
+
+    // Scan ` (string beginning)
+    if (this.stream[this.i] !== "`") return false;
+    this.i++;
+
+    // Consume (string content)
+    for (; this.i < this.stream.length; this.i++) {
+      if (this.stream[this.i] === "`" || this.stream[this.i] === "\n") {
+        break;
+      }
+    }
+
+    // If we didn't end up with `
+    if (this.stream[this.i] !== "`") {
+      this.syntaxErr(`String is not closed.`);
+    }
+
+    // Save
+    if (this.i > this.li) {
+      this.node = {
+        type: NodeType.String,
+        value: this.stream.slice(this.li + 1, this.i),
+      };
+      // Go past `
+      this.i++;
+      return true;
+    }
+
+    this.rewindPos();
+    return false;
+  }
+
+  //
+  //
+  //
+  //
+  //
+  //
+  //
+
+  syntaxErr(message: string, shift: number = 0) {
+    let out = "\n\n" + this.streamAtCurrPos(shift);
+    out += `\n[SyntaxError] ` + message + "\n";
+    throw out;
+  }
+
+  streamAtCurrPos(
     shift: number = 0,
-    linesBefore: number = 2,
-    linesAfter: number = 2
-  ) {
+    before: number = 3,
+    after: number = 1
+  ): string {
     // Add shift to i within stream boundaries
-    // const shifted_i = this.addInRange(this.i, shift, 0, this.stream.length - 1);
-    // const [line, idx] = this.cursor.linesAround(shifted_i);
-    /*
-    1 | `Hello world!`
-    2 |   this.new
-    ~~~~~~^ 
-    3 | if (bla) =>
+    const i_shifted = this.addInRange(this.i, shift, 0, this.stream.length - 1);
 
-    setCols([len: 3, postfix: ` | `], [useTabs: true])
-    forEach(line, index =>
-      addRow(index + 1, line)
-    addPointLine(6, `^`, `~`)
+    // Add number of lines given the shift
+    const cl_shifted =
+      this.line +
+      (this.stream.slice(this.i, i_shifted).match(/\n/g) || []).length;
 
-    pointPos(i, pointer, filler)
-    */
+    // Extract lines before and after the cursor
+    const linesBefore = this.linesBeforeArray(
+      i_shifted,
+      Math.max(1, before + 1)
+    );
+    const linesAfter = this.linesAfterArray(i_shifted, Math.max(1, after + 1));
+
+    // Extract current line
+    const clPartBefore = linesBefore[linesBefore.length - 1];
+    const clPartAfter = linesAfter[0];
+    const cl = clPartBefore + clPartAfter;
+    linesBefore[linesBefore.length - 1] = cl;
+
+    // Calc max line number width
+    const maxWidth = `${cl_shifted}`.length;
+
+    // Calc starting line number to count from
+    let ln = cl_shifted + 1 - linesBefore.length;
+    if (ln < 0) ln = 0; // For debugging
+
+    // Print buffer
+    let out = "";
+
+    // Print lines before the cursor
+    linesBefore.forEach((line) => {
+      const pad = " ".repeat(maxWidth - `${ln}`.length);
+      out += `${ln}${pad} | ${line}\n`;
+      ln++;
+    });
+
+    // Print cursor
+    {
+      // Actual ("unsafe") position in the stream
+      const i_actual = this.i + shift;
+
+      // Hint for the cursor
+      let hint = ``;
+
+      // Calc the tilde length of the arrow ~~~^
+      let tildeLen = maxWidth + 3; // 3 == " | ".length
+
+      // Cursor on a new line
+      if (this.stream[i_actual] === "\n") {
+        tildeLen += cl.length;
+        hint = `(new line)`;
+      }
+      // Cursor at the end of stream
+      else if (i_actual >= this.stream.length) {
+        tildeLen += cl.length;
+        hint = `(end of stream)`;
+      }
+      // Cursor at the beginning of stream
+      else if (i_actual < 0) {
+        tildeLen -= 1;
+        hint = `(out of stream)`;
+      } else {
+        tildeLen += clPartBefore.length;
+      }
+
+      // Put cursor
+      out += "~".repeat(tildeLen) + "^ " + hint + "\n";
+    }
+
+    // Print lines after the cursor
+    linesAfter.slice(1).forEach((line) => {
+      const pad = " ".repeat(maxWidth - `${ln}`.length);
+      out += `${ln}${pad} | ${line}\n`;
+      ln++;
+    });
+
+    return out;
   }
 
   logSelf() {
-    console.log("this.stream:\n", this.stream);
-    console.log("this.i: " + this.i);
-    console.log("this.currLine: " + this.cl);
-    console.log("this.currLvl: " + this.cil);
-    console.log("this.ast: " + (this.ast.length == 0 ? "[empty]" : this.ast));
+    console.log(this.streamAtCurrPos(0, 2, 1));
+    console.log("this.i:", this.i);
+    console.log("this.currLine:", this.line);
+    console.log("this.currLevel:", this.level);
+    console.log("this.lastNode: ", this.node);
+    console.log("this.ast:", this.tree.length == 0 ? "[empty]" : this.tree);
   }
 
-  addInRange(a: number, b: number, min: number, max: number) {
-    const sum = a + b;
-    // overflow/underflow check
-    if (sum > max) return max;
-    if (sum < min) return min;
-    return sum;
-  }
-
+  /**
+   * Get the line of text around the current pointer position.
+   *
+   * Example:
+   * ```
+   *  012345 6
+   * \nabcd\n   this.stream
+   *     ^      this.i = 3
+   * ```
+   * If `i` is 3, this function returns `['abcd', 2]`, where 'abcd' is the text
+   * on the same line as the pointer (excluding the newline character '\n') and
+   * 2 is the pointer relative to the returned line.
+   *
+   * @param i - The pointer position (default is the current 'this.i' position).
+   * @returns A tuple of the line text and pointer's position relative to the
+   * returned line.
+   */
   linesAround(
     i: number = this.i,
     before: number = 1,
@@ -222,6 +490,27 @@ export class Compiler {
     const partBefore = this.linesBefore(i, before);
     const partAfter = this.linesAfter(i, after);
     return [partBefore + partAfter, partBefore.length];
+  }
+
+  linesAroundArray(
+    i: number = this.i,
+    before: number = 1,
+    after: number = 1
+  ): [string[], number, number] {
+    // Extract lines before and after the cursor
+    const linesBefore = this.linesBeforeArray(i, before);
+    const linesAfter = this.linesAfterArray(i, after);
+    // Extract current line
+    const clPartBefore = linesBefore[linesBefore.length - 1];
+    const clPartAfter = linesAfter[0];
+    const cl = clPartBefore + clPartAfter;
+    const clPos = clPartBefore.length;
+    linesBefore[linesBefore.length - 1] = cl; // update
+    return [
+      [...linesBefore, ...linesAfter.slice(1)],
+      linesBefore.length - 1,
+      clPos,
+    ];
   }
 
   linesBeforeArray(i: number = this.i, n: number = 1): string[] {
@@ -323,20 +612,20 @@ export class Compiler {
 
     this.assertWithinBoundaries(i);
 
-    // step back
+    // Step back
     let ib = i - 1;
 
-    // set line counter
+    // Set line counter
     let count = 0;
 
-    // consume n number of lines backwards
+    // Consume n number of lines backwards
     while (true) {
       if (this.stream[ib] == "\n") count++;
       if (count == n || ib <= 0) break;
       ib--;
     }
 
-    // check if we ended up at the end of the previous line
+    // Check if we ended up at the end of the previous line
     if (this.stream[ib] == "\n") ib++;
 
     return this.stream.slice(ib, i);
@@ -349,10 +638,10 @@ export class Compiler {
 
     let ia = i;
 
-    // set line counter
+    // Set line counter
     let lineCount = 0;
 
-    // consume n number of lines forward
+    // Consume n number of lines forward
     while (true) {
       if (this.stream[ia] == "\n") lineCount++;
       if (lineCount == n || ia >= this.stream.length) break;
@@ -360,28 +649,26 @@ export class Compiler {
     }
 
     if (this.stream[ia] == "\n") ia++;
-    // if (this.stream[i] == "\n") i++;
+    // If (this.stream[i] == "\n") i++;
 
     return this.stream.slice(i, ia);
   }
 
-  nonPrintCharName(char: string) {
-    switch (char) {
-      case " ":
-        return "SPACE";
-      case "\n":
-        return "NEW LINE";
-      case "\t":
-        return "TAB";
-    }
-  }
-
+  // Remove
   assertWithinBoundaries(i: number) {
     // i must be within stream boundaries
     assert(
       i >= 0 && i < this.stream.length,
       Compiler.Error.IndexOutOfBounds(i, this.stream.length)
     );
+  }
+
+  addInRange(a: number, b: number, min: number, max: number) {
+    const sum = a + b;
+    // overflow/underflow check
+    if (sum > max) return max;
+    if (sum < min) return min;
+    return sum;
   }
 
   /**
@@ -427,19 +714,22 @@ namespace LoggerTypes {
   export type Column = {
     lines?: string[];
 
-    len?: number | { min?: number; max?: number };
-    align?: "left" | "right";
-    filler?: string;
+    colWidth?: number | { min?: number; max?: number };
+    colCut?: boolean;
+    colCutWith?: string;
+    colAlign?: "left" | "right" | "center";
+    colCenterShift?: "left" | "right";
+    colFiller?: string;
 
-    postfix?: string;
-    prefix?: string;
+    colPost?: string;
+    colPre?: string;
+
+    // emptyColFill?: string; // ` `
+    // emptyColPrePost?: boolean; // true
 
     tabSize?: number;
     tabChar?: string;
     tabDepth?: number;
-
-    cut?: boolean;
-    cutWith?: string;
   };
 }
 
@@ -452,12 +742,12 @@ export class Logger {
   constructor(...cols: LoggerTypes.Column[]) {
     // If no columns given, provide a default one
     if (cols.length == 0) {
-      this.cols.push(Logger.defaultCol());
+      this.cols.push(Logger.defaultCol);
     }
     // Otherwise, initialize given columns
     else {
       cols.forEach((col) => {
-        col = Logger.mergeWithDefaults(col);
+        col = Logger.mergeColWithDefault(col);
         this.cols.push(col);
       });
     }
@@ -466,114 +756,134 @@ export class Logger {
     this.cc = this.cols[this.cci];
   }
 
-  static defaultCol(): LoggerTypes.Column {
-    // By return a new object each time, we clear the column buffer to prevent
-    // copying the same column pointer over other buffers
-    return {
-      lines: [],
+  static defaultCol: LoggerTypes.Column = {
+    lines: [],
 
-      len: {},
-      align: `left`,
-      filler: ` `,
+    colWidth: -1, // auto fixed width
+    colCut: true,
+    colCutWith: `.`,
+    colAlign: `left`,
+    colCenterShift: `left`,
+    colFiller: ` `,
 
-      postfix: ``,
-      prefix: ``,
+    colPost: ``,
+    colPre: ``,
 
-      tabDepth: 0,
-      tabSize: 2,
-      tabChar: ` `,
-
-      cut: true,
-      cutWith: `..`,
-    };
-  }
+    tabDepth: 0,
+    tabSize: 2,
+    tabChar: ` `,
+  };
 
   static overrideCol(oldCol: LoggerTypes.Column, newCol: LoggerTypes.Column) {
     return { ...oldCol, ...newCol };
   }
 
-  static correctifyCol(col: LoggerTypes.Column) {
-    function present(field: any) {
-      return field !== undefined;
-    }
-
+  static verifyCol(col: LoggerTypes.Column) {
     function assert(cond: boolean, message: string) {
       if (!cond) throw Logger.Error.IllFormedColumnOption(message);
     }
 
     // {lines: ...}
 
+    // Make sure 'lines' buffer is always initialized
+    if (col.lines === undefined) {
+      col.lines = [];
+    }
+
+    // If a user provided a default buffer, make sure to copy it for every (new)
+    // column to prevent writing to same buffer across separate columns
+    if (col.lines === Logger.defaultCol.lines) {
+      col.lines = Array.from(Logger.defaultCol.lines);
+    }
+
     assert(
       Array.isArray(col.lines),
       `The 'lines' option should be an array (of strings).`
     );
 
-    // {len: ...}
+    // {colLen: ...}
 
     assert(
-      typeof col.len === "number" || typeof col.len === "object",
-      `The 'len' option should be either a positive number or an object with 'min' and/or 'max' options.`
+      typeof col.colWidth === "number" || typeof col.colWidth === "object",
+      `The 'colWidth' option should be either a positive number or an object with 'min' and/or 'max' options.`
     );
-    // If length is {len: number}
-    if (typeof col.len === "number") {
+
+    // If length is {colLen: number}
+    if (typeof col.colWidth === "number") {
       assert(
-        col.len >= 0,
-        `The 'len' option can only accept positive numbers (>= 0) or an object with 'min' and/or 'max' options.`
+        col.colWidth >= -2,
+        `The 'colWidth' option accepts only positive numbers (fixed width), -1 (fixed width derived automatically), -2 (float width), or an object with 'min'/'max' options (ranged width).`
       );
-      col.len = { min: col.len, max: col.len };
+      if (col.colWidth === -2) {
+        col.colWidth = { min: 0, max: Number.MAX_SAFE_INTEGER };
+      } else {
+        // -1 will stay for further processing
+        col.colWidth = { min: col.colWidth, max: col.colWidth };
+      }
     }
-    // If length is {len: {min: number, max: number}}
-    else if (typeof col.len === "object") {
+
+    // If length is {colLen: {min: number, max: number}}
+    else if (typeof col.colWidth === "object") {
       let min = -1;
       let max = -1;
 
-      if (present(col.len?.min)) {
+      if (typeof col.colWidth.min === "number") {
         assert(
-          typeof col.len.min === "number" && col.len.min! >= 0,
-          `The length's 'min' option can only accept positive numbers (>= 0).`
+          col.colWidth.min! >= 0,
+          `The column length 'min' option can only accept positive numbers (>= 0).`
         );
-        min = col.len.min!;
+        min = col.colWidth.min!;
       } else {
         min = 0;
       }
 
-      if (present(col.len?.max)) {
+      if (typeof col.colWidth.max === "number") {
         assert(
-          typeof col.len.max === "number" && col.len.max! >= 0,
-          `The length's 'max' option can only accept positive numbers (>= 0).`
+          col.colWidth.max! >= 0,
+          `The column length 'max' option can only accept positive numbers (>= 0).`
         );
-        max = col.len.max!;
+        max = col.colWidth.max!;
       } else {
         max = Number.MAX_SAFE_INTEGER;
       }
 
       assert(
         min <= max,
-        `The length's 'min' option should be less or equal to 'max'.`
+        `The column length 'min' option should be less or equal to 'max'.`
       );
 
-      col.len = { min: min, max: max };
+      col.colWidth = { min: min, max: max };
     }
 
-    // {align: ...}
+    // {colAlign: ...}
 
     assert(
-      typeof col.align === "string" &&
-        (col.align === `left` || col.align === `right`),
-      `The 'align' option should be either 'left' or 'right'.`
+      typeof col.colAlign === "string" &&
+        (col.colAlign === `left` ||
+          col.colAlign === `right` ||
+          col.colAlign === `center`),
+      `The 'colAlign' option should be either 'left', 'right' or 'center'.`
     );
 
-    // {filler: ...}
+    // {colCenterShift: ...}
 
     assert(
-      typeof col.filler === "string" && col.filler.length === 1,
+      typeof col.colCenterShift === "string" &&
+        (col.colCenterShift === `left` || col.colCenterShift === `right`),
+      `The 'colCenterShift' option should be either 'left' or 'right'.`
+    );
+
+    // {colFiller: ...}
+
+    assert(
+      typeof col.colFiller === "string" && col.colFiller.length === 1,
       `The 'filler' option should be a single character.`
     );
 
-    // {prefix/postfix: ...}
+    // {colPre/colPost: ...}
 
     assert(
-      typeof col.prefix === "string" && typeof col.postfix === "string",
+      typeof col.colPre === "string" && typeof col.colPost === "string",
       `The 'prefix' and 'postfix' options should be strings and are part of the column (min/max) length.`
     );
 
@@ -601,21 +911,21 @@ export class Logger {
     // {cut: ...}
 
     assert(
-      typeof col.cut === "boolean",
+      typeof col.colCut === "boolean",
       `The 'cut' option should be either true or false.`
     );
 
     // {cutWith: ...}
 
     assert(
-      typeof col.cutWith === "string",
+      typeof col.colCutWith === "string",
       `The 'cutWith' option should be a string. If it exceeds max column length, it will be contracted.`
     );
   }
 
-  static mergeWithDefaults(col: LoggerTypes.Column) {
-    const newCol = Logger.overrideCol(Logger.defaultCol(), col);
-    Logger.correctifyCol(newCol);
+  static mergeColWithDefault(col: LoggerTypes.Column) {
+    const newCol = Logger.overrideCol(Logger.defaultCol, col);
+    Logger.verifyCol(newCol);
     return newCol;
   }
 
@@ -624,6 +934,31 @@ export class Logger {
 
     if (colIndex < 0 || colIndex > colLen - 1)
       throw Logger.Error.ColumnIdxOutOfBoundaries(colIndex, colLen);
+  }
+
+  // Helper method to update or reset column options
+  private updateOrResetCol(
+    colIndex: number,
+    colOptions: LoggerTypes.Column,
+    reset: boolean = false
+  ) {
+    // Check
+    this.assertWithinBounds(colIndex, this.cols.length);
+
+    // Create base column options
+    const baseCol = reset ? Logger.defaultCol : this.cols[colIndex];
+
+    // Override baseCol with provided colOptions
+    const updatedCol = Logger.overrideCol(baseCol, colOptions);
+    Logger.verifyCol(updatedCol);
+    this.cols[colIndex] = updatedCol;
+
+    // Update current column pointer if needed
+    if (colIndex === this.cci) {
+      this.cc = updatedCol;
+    }
+
+    return this;
   }
 
   // Set current column by index
@@ -657,31 +992,6 @@ export class Logger {
     return this.updateOrResetCol(colIndex, colOptions, true);
   }
 
-  // Helper method to update or reset column options
-  private updateOrResetCol(
-    colIndex: number,
-    colOptions: LoggerTypes.Column,
-    reset: boolean = false
-  ) {
-    // Check
-    this.assertWithinBounds(colIndex, this.cols.length);
-
-    // Create base column options
-    const baseCol = reset ? Logger.defaultCol() : this.cols[colIndex];
-
-    // Override baseCol with provided colOptions
-    const updatedCol = Logger.overrideCol(baseCol, colOptions);
-    Logger.correctifyCol(updatedCol);
-    this.cols[colIndex] = updatedCol;
-
-    // Update current column pointer if needed
-    if (colIndex === this.cci) {
-      this.cc = updatedCol;
-    }
-
-    return this;
-  }
-
   // Move focus to the next column
   nextCol() {
     // Increment the current column index in a circular manner
@@ -693,23 +1003,21 @@ export class Logger {
     return this;
   }
 
-  // Insert raw characters
+  // Insert characters directly to a line buffer
   insRaw(chars: string) {
     if (chars.length === 0) return this;
 
-    // Initialize buffer if doesn't exist
-    if (this.cc.lines === undefined) {
-      this.cc.lines = [];
-    }
+    // Assume line buffer always exists
+    const colLines = this.cc.lines!;
 
     // If last line is closed, insert to a new one
     if (this.lc) {
-      this.cc.lines.push(``);
+      colLines.push(``);
       this.lc = false;
     }
 
     // Flash
-    this.cc.lines[this.cc.lines.length - 1] += chars;
+    colLines[colLines.length - 1] += chars;
 
     return this;
   }
@@ -719,7 +1027,7 @@ export class Logger {
     return this.insRaw(this.getTab(depth));
   }
 
-  // End the line for the previous "insert raw" mode
+  // Terminate the line to allow next "insRaw"s to use a new one
   insRawEndLine() {
     this.lc = true;
     return this;
@@ -727,34 +1035,20 @@ export class Logger {
 
   // Insert a full line with indentation if configured
   insLine(chars: string) {
-    // Initialize buffer if doesn't exist
-    if (this.cc.lines === undefined) {
-      this.cc.lines = [];
-    }
-
-    // Add tab if set
+    // Add tab if exists
     chars = this.getTab() + chars;
 
-    // For Typescript
-    if (typeof this.cc.len !== "object") throw Error("Unreachable");
+    // Flash resulting line (assume line buffer always exists)
+    this.cc.lines!.push(chars);
 
-    // Cut or align the content
-    if (chars.length > this.cc.len.max!) {
-      if (!this.cc.cut) throw Logger.Error.ColumnContentExceeds();
-      //    cut
-    } else if (chars.length < this.cc.len.min!) {
-      //    fill according to col.align
-    }
-
-    // Add pre/postfix if set (do not affect min/max length)
-    if (this.cc.prefix) chars = this.cc.prefix + chars;
-    if (this.cc.postfix) chars = chars + this.cc.postfix;
-
-    // Flash resulting line
-    this.cc.lines.push(chars);
-    this.lc = true; // line is closed
+    // Close current line
+    this.lc = true;
 
     return this;
+  }
+
+  getLastLine(): string {
+    return this.cc.lines![this.cc.lines!.length - 1];
   }
 
   // TODO
@@ -783,41 +1077,122 @@ export class Logger {
   }
 
   dump(): string {
-    // Get max column length among all
-    let maxLen = 0;
+    // Get max number of lines among all columns
+    let maxColLen = 0;
     this.cols.forEach((col) => {
-      if (col.lines === undefined) return;
-      if (col.lines.length > maxLen) {
-        maxLen = col.lines.length;
-}
+      if (col.lines!.length > maxColLen) {
+        maxColLen = col.lines!.length;
+      }
+    });
+
+    // Check if there are cols that require deriving colWidth automatically
+    this.cols.forEach((col) => {
+      if (typeof col.colWidth === "object" && col.colWidth.min === -1) {
+        // Derive
+        let maxLineWidth = 0;
+        col.lines?.forEach((line) => {
+          if (line.length > maxLineWidth) {
+            maxLineWidth = line.length;
+          }
+        });
+        col.colWidth.min = maxLineWidth;
+        col.colWidth.max = maxLineWidth;
+      }
     });
 
     // Resulting string
     let out = "";
 
-    // For every row
-    for (let row = 0; row < maxLen; row++) {
-      // For every column
-      for (const col of this.cols) {
-        if (col.lines === undefined || col.lines[row] === undefined) continue;
-        // Merge lines
-        out += col.lines[row];
-}
+    // For every line
+    for (let lineIdx = 0; lineIdx < maxColLen; lineIdx++) {
+      // In every column
+      this.cols.forEach((col) => {
+        if (typeof col.colWidth !== "object") return; // safe due to verifyCol()
+        let line = col.lines![lineIdx]; // safe due to verifyCol()
+
+        // If column lines have ended (the column is shorter than others)
+        if (line === undefined) {
+          // If width is fixed, put a padding to keep horizontal alignment
+          if (col.colWidth.max !== Number.MAX_SAFE_INTEGER) {
+            line = col.colFiller!.repeat(col.colWidth.max!);
+          } else {
+            line = ``;
+          }
+          line = col.colPre + line;
+          line = line + col.colPost;
+          out += line;
+          return;
+        }
+
+        const lineWidth = line.length;
+        const lineMinWidth = col.colWidth.min!;
+        const lineMaxWidth = col.colWidth.max!;
+        // console.log(
+        //   "min/max",
+        //   lineMinWidth,
+        //   lineMaxWidth,
+        //   "\n",
+        //   "lineWidth",
+        //   lineWidth,
+        //   "\n",
+        //   "line",
+        //   line
+        // );
+
+        if (lineWidth > lineMaxWidth) {
+          if (col.colCut) {
+            if (col.colCutWith) {
+              if (col.colCutWith.length >= lineMaxWidth) {
+                line = col.colCutWith.slice(0, lineMaxWidth);
+              } else {
+                line =
+                  line.slice(0, lineMaxWidth - col.colCutWith.length) +
+                  col.colCutWith;
+              }
+            } else {
+              line = line.slice(0, lineMaxWidth);
+            }
+          }
+        } else if (lineWidth < lineMinWidth) {
+          const diff = lineMinWidth - lineWidth;
+          const pad = col.colFiller!.repeat(diff);
+          if (col.colAlign === `left`) {
+            line = line + pad;
+          } else if (col.colAlign === `right`) {
+            line = pad + line;
+          } else {
+            // `center`
+            const lPad = pad.slice(0, Math.ceil(diff / 2));
+            const rPad = pad.slice(0, Math.floor(diff / 2));
+            if (col.colCenterShift === "left") {
+              line = rPad + line + lPad;
+            } else {
+              line = lPad + line + rPad;
+            }
+          }
+        }
+
+        // Add pre/postfix if set (do not affect min/max length)
+        if (col.colPre) line = col.colPre + line;
+        if (col.colPost) line = line + col.colPost;
+
+        out += line;
+      });
 
       // End of row
       out += "\n";
-}
+    }
 
     return out;
-    }
+  }
 
   print() {
     console.log(this.dump());
-}
+  }
 
-/**
- * Errors
- */
+  /**
+   * Errors
+   */
   static Error = {
     IllFormedColumnOption: (message: string) => ({
       code: 2,
@@ -837,8 +1212,8 @@ export class Logger {
     ColumnContentExceeds: () => ({
       code: 3,
       message: `Column content exceeds the maximum length allowed by the 'max' option.`,
-  }),
-};
+    }),
+  };
 }
 
 /**
@@ -846,6 +1221,108 @@ export class Logger {
  * Test
  * ***************************
  */
+
+namespace Tester {
+  export type EqualFunc = (expected: any, result: any) => boolean;
+  export type TestFunc = (...input: any) => any;
+  export type Case = {
+    name?: string;
+    cases?: Case[];
+    input?: any[];
+    expect?: any;
+    expectErr?: any;
+    skip?: boolean;
+    focus?: boolean;
+    func?: TestFunc;
+    equalFunc?: EqualFunc;
+    errEqualFunc?: EqualFunc;
+    show?: {
+      summaryIfFailed?: boolean;
+      summaryAnyway?: boolean;
+      caseListIfFailed?: boolean;
+      caseListAnyway?: boolean;
+      caseDetailsIfFailed?: boolean;
+      caseDetailsAnyway?: boolean;
+    };
+    _parent?: Case;
+    _finished?: {
+      status: string;
+      reason?: { code: number; message: any };
+      result?: any;
+      resultErr?: any;
+    };
+  };
+
+  // [OK] 1/2 passed "linesBeforeArray" (4/4 passed; 100%)
+  //    [OK] 1/4 passed "Bla bla bla"
+  //    [OK] 2/4 passed
+  //    [OK] 3/4 passed "Foo foo"
+  //    [OK] 4/4 passed "Bar"
+
+  class Self {
+    cases: Case[] = [];
+
+    constructor(...cases: Case[]) {
+      cases.forEach((cs) => {
+        Self.correctifyCase(cs);
+        this.cases.push(cs);
+      });
+    }
+
+    static defaultCase: Case = {
+      show: {
+        summaryIfFailed: false,
+        summaryAnyway: false,
+        caseListIfFailed: true,
+        caseListAnyway: false,
+        caseDetailsIfFailed: true,
+        caseDetailsAnyway: false,
+      },
+      _parent: undefined,
+    };
+
+    // Recursive
+    executeCase(cs: Case) {}
+
+    // Once for all
+    executeRoot() {
+      this.cases.forEach((cs) => {
+        this.executeCase(cs);
+      });
+    }
+
+    static correctifyCase(cs: Case) {
+      // if expect is present, expectErr should not
+    }
+
+    add(cs: Case) {
+      Self.correctifyCase(cs);
+      this.cases.push(cs);
+      return this;
+    }
+
+    skip(cs: Case) {
+      return this;
+    }
+
+    focus(cs: Case) {
+      Self.correctifyCase(cs);
+      cs.focus = true;
+      this.cases.push(cs);
+      return this;
+    }
+  }
+}
+
+//
+//
+//
+//
+//
+//
+//
+//
+//
 
 type TestEqualFunc = (expected: any, result: any) => boolean;
 type TestFunc = (...input: any) => any;
@@ -863,9 +1340,9 @@ type TestData = {
     errEqualFunc?: TestEqualFunc;
   }[];
   func: TestFunc;
-  options?: TestStatsOptions;
   equalFunc?: TestEqualFunc;
   errEqualFunc?: TestEqualFunc;
+  options?: TestStatsOptions;
 };
 
 type TestStatsOptions = {
@@ -1251,8 +1728,8 @@ export class Test {
       testOrder++;
     }
 
-    // add a trailing line if cases exist and listed
-    if (!out.dump().endsWith(`    \n`)) {
+    // Add a trailing line if cases exist and listed
+    if (out.getLastLine() !== `    `) {
       out.insLine(`    `);
     }
 
@@ -1436,7 +1913,7 @@ export class TestRunner {
     let stats = "";
     if (this.testsOnFocus.size > 0) {
       for (const test of this.testsOnFocus) {
-      test.execute();
+        test.execute();
         stats += test.dumpStats(options);
       }
     } else {
@@ -1460,20 +1937,4 @@ export class TestRunner {
 
 function assert(cond: boolean, error: { code: number; message: string }) {
   if (!cond) throw error;
-}
-
-function execFn(fn: Function) {
-  const numArgs = fn.length;
-  const args = new Array(numArgs).fill(undefined);
-  return fn.call(null, args);
-}
-
-function isIterable(input: any) {
-  try {
-    for (const _ of input) {
-    }
-    return true;
-  } catch (e) {
-    return false;
-  }
 }
