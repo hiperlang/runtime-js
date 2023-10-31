@@ -1,6 +1,19 @@
 import { Test, Compiler, TestRunner, Logger } from "./runtime";
 
 const tester = new TestRunner();
+/*
+
+1 | `Hello world!`
+2 |   this.new
+~~~~~~^ 
+3 | if (bla) =>
+
+forEach(line, index =>
+  addRow(index + 1, line)
+addPointLine(6, `^`, `~`)
+
+pointPos(i, pointer, filler)
+*/
 
 /**
  * ***************************
@@ -328,7 +341,8 @@ line4
       },
     ],
     func: () => {
-      const logger = new Logger({});
+      const logger = new Logger({ tabSize: 4, tabChar: `+`, colWidth: -2 });
+      logger.insLine("");
       logger.insRaw("line");
       logger.insRaw("0");
       logger.insLine("line1");
@@ -347,21 +361,34 @@ line4
   })
 );
 
+/**
+ * ***************************
+ * Compiler
+ * ***************************
+ */
+// ....
+
 tester.run({ showCaseListAnyway: true });
 
-// TODO: test
-// const printer = new LinePrinter(4, ` `);
-// printer.add("line");
-// printer.add("0");
-// printer.nl();
-// printer.line("line1");
-// printer.tab();
-// printer.line("line2");
-// printer.add("line");
-// printer.add("3");
-// printer.nl();
-// printer.untab();
-// printer.untab();
-// printer.line("line4");
-// printer.print();
-// assert printer.buffer == '...';
+// Logger.defaultCol.lines = ["++ "];
+// const log = new Logger(
+//   {
+//     colPost: " + ",
+//     colAlign: "center",
+//     colWidth: -2,
+//     colCut: true,
+//   },
+//   {}
+// );
+// log.insLine("|--|");
+// log.insLine("|----|");
+// log.nextCol();
+// log.insLine("|----|");
+// log.insLine("|--|");
+// log.insLine("|----|");
+// log.print();
+
+console.log("Error printing:");
+new Compiler(`
+\`Hello\`
+  \`World\``).compile();
