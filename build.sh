@@ -3,45 +3,30 @@
 bunx conc --kill-others \
     "\
     esbuild \
-    src/runtime/tests.ts \
+    src/tests.ts \
     --bundle \
     --format=iife \
-    --global-name=hyper \
+    --global-name=hiper \
     --sourcemap=linked \
     --asset-names=[dir]/[name] \
     --entry-names=[dir]/[name] \
-    --outdir=out/runtime \
+    --outdir=out \
     --legal-comments=inline \
     --watch \
-    "\
+    " \
     "\
     cpx \"src/**/*.{html,png,jpg,json,css,ico}\" out \
     --watch \
-    "\
+    " \
     "\
     wds \
-    --root-dir=out/website \
+    --root-dir=out \
+    --app-index=out/index.html \
     --debug \
     --watch \
-    "\
-    "\
-    unocss \
-    src/website/index.html \
-    --out-file out/website/utilities.css \
-    --preflights false \
-    --watch \
-    "\
-    "\
-    postcss \
-    src/website/main.css \
-    --output out/website/main.css \
-    --use autoprefixer \
-    --autoprefixer \"> 1%, last 5 versions\" \
-    --watch \
-    "\
+    "
 
-
-# --app-index=out/runtime/index.html \
+# bun build as esbuild alternative
 #  "bun build \
 #     src/runtime/runtime.ts \
 #     --sourcemap external \
