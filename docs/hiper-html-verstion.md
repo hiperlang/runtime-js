@@ -1,4 +1,6 @@
-# Hyper Language Reference
+# Hiper Language Reference
+
+This document serves as an initial draft outlining design and ideas for Hiper language embedded as valid HTML tags.
 
 ## Basic Constructs
 
@@ -320,7 +322,7 @@ Element: 3; Index: 2
 ```
 
 ```html
-<hyper>
+<hiper>
   <func#>
     <arg@ a :num></arg@>
     <arg@ b :num></arg@>
@@ -339,7 +341,7 @@ Element: 3; Index: 2
     <p>Paragraph</p>
     <out></out>
   </h1>
-</hyper>
+</hiper>
 ```
 
 ````html
