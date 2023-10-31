@@ -1,0 +1,18 @@
+{
+  "name": "hiper-runtime-js",
+  "devDependencies": {
+    "@happy-dom/global-registrator": "^10.11.2",
+    "@web/dev-server": "^0.3.6",
+    "bun-types": "latest",
+    "concurrently": "^8.2.2",
+    "cpx": "^1.5.0",
+    "esbuild": "^0.19.2"
+  },
+  "scripts": {
+    "build": "./build.sh"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "dependencies": {}
+}
